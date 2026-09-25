@@ -23,7 +23,8 @@ export class D1Sink {
     if (!accountId || !databaseId || !apiToken) {
       throw new Error('CLOUDFLARE_ACCOUNT_ID, D1_DATABASE_ID and CLOUDFLARE_API_TOKEN are required (or pass --out file.sql)');
     }
-    this.url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}/query`;
+    const base = (process.env.CLOUDFLARE_API_BASE || 'https://api.cloudflare.com/client/v4').replace(/\/$/, '');
+    this.url = `${base}/accounts/${accountId}/d1/database/${databaseId}/query`;
     this.apiToken = apiToken;
     this.log = log;
     this.rowsWritten = 0; // D1 free plan allows 100k rows written per day
@@ -43,6 +44,12 @@ export class D1Sink {
       size += s.length + 1;
     }
     if (chunk.length) await this.send(chunk.join('\n'));
+  }
+
+  /** Runs one read query and returns its rows. */
+  async query(sql) {
+    const body = await this.send(sql);
+    return [].concat(body.result ?? [])[0]?.results ?? [];
   }
 
   async send(sql) {

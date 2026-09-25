@@ -119,9 +119,12 @@ location, then reports net sales, labor and any missing Toast permissions in the
 writes nothing and doesn't need the Cloudflare secrets.
 
 `.github/workflows/toast-sync.yml` refreshes today every 2 hours. Each morning it
-also re-syncs the last 7 days, so late edits and tip adjustments are picked up. **To load
-history**, open *Actions → Toast sync → Run workflow* and enter a start date. For more than a
-few months, run it in chunks of about 6 months.
+also re-syncs the last 7 days, so late edits and tip adjustments are picked up. **History** is
+loaded by `.github/workflows/toast-backfill.yml`. Every night it works backwards from the
+earliest loaded day toward its `from` date (default 2025-01-01), and stops after 60,000 D1 rows
+written so it stays under the free plan's 100k/day. Once history is complete it does nothing. To
+go further back, run *Actions → Toast history backfill → Run workflow* with an earlier date. For a
+one-off date range, use *Toast sync → Run workflow* with a start and end date.
 
 You can also run the sync by hand: `node etl/src/index.js --start 2025-01-01 --end 2025-06-30`
 with the same environment variables set. Add `--out file.sql` to write SQL to a file instead of
