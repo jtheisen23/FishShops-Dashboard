@@ -198,6 +198,28 @@ function update() {
   render();
 }
 
+/**
+ * A period that starts before the earliest loaded day (while the backfill
+ * runs, or before its FROM date) would show understated totals and inflated
+ * changes, so say so instead of letting the numbers mislead.
+ */
+function historyWarning({ current, compare }) {
+  const firsts = allLocations
+    .filter((l) => state.locs.includes(l.id))
+    .map((l) => l.first_business_date)
+    .filter(Boolean)
+    .sort();
+  const loadedFrom = firsts[firsts.length - 1]; // the location with the least history
+  if (!loadedFrom) return null;
+  const partial = [];
+  if (current.start < loadedFrom) partial.push('the selected dates');
+  if (compare && compare.start < loadedFrom) partial.push('the comparison dates');
+  if (!partial.length) return null;
+  return h('div', { class: 'notice' },
+    h('b', {}, `Data starts ${fmtDateLong(loadedFrom)}. `),
+    `Totals and changes for ${partial.join(' and ')} are incomplete because earlier days aren't in the dashboard yet.`);
+}
+
 async function render() {
   const seq = ++renderSeq;
   const view = $('view');
@@ -225,7 +247,8 @@ async function render() {
     const node = await tab.render(ctx);
     if (seq !== renderSeq) return; // a newer render started
     disposeCharts();
-    view.replaceChildren(node);
+    const warning = tab.admin ? null : historyWarning(periods);
+    view.replaceChildren(...(warning ? [warning] : []), node);
   } catch (err) {
     if (seq !== renderSeq) return;
     disposeCharts();
