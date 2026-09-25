@@ -59,7 +59,7 @@ a { color: var(--accent); }
   position: sticky; top: 0; z-index: 20;
 }
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 650; font-size: 16px; }
-.brand svg { width: 26px; height: 26px; fill: var(--accent); }
+.brand img { height: 48px; width: auto; display: block; }
 .topbar-right { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; justify-content: flex-end; }
 .user-badge { font-size: 12px; color: var(--text-2); }
 .user-badge b { color: var(--text); font-weight: 600; }
