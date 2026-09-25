@@ -2,12 +2,12 @@ name: Toast sync
 
 on:
   schedule:
-    - cron: '15 */2 * * *'  # every 2 hours: refresh yesterday + today
+    - cron: '15 */2 * * *'  # every 2 hours: refresh today (the nightly run below finalizes past days)
     - cron: '40 11 * * *'   # daily ~4:40am Pacific: re-sync the last 7 days to pick up late edits, tip adjustments and payroll fixes
   workflow_dispatch:
     inputs:
       start:
-        description: 'Backfill start date (YYYY-MM-DD). Leave empty for the last 2 days.'
+        description: 'Backfill start date (YYYY-MM-DD). Leave empty for today only.'
         required: false
       end:
         description: 'Backfill end date (YYYY-MM-DD). Defaults to today.'
@@ -58,7 +58,7 @@ jobs:
           elif [ "$SCHEDULE" = "40 11 * * *" ]; then
             args+=(--days 7)
           else
-            args+=(--days 2)
+            args+=(--days 1)
           fi
           [ -n "$IN_LOCATIONS" ] && args+=(--locations "$IN_LOCATIONS")
           node etl/src/index.js "${args[@]}"
