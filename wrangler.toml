@@ -1,6 +1,8 @@
 name = "fishshops-dashboard"
 main = "worker/src/index.js"
 compatibility_date = "2025-09-01"
+# Keep variables/secrets set in the Cloudflare dashboard (e.g. BOOTSTRAP_ADMINS) on deploy.
+keep_vars = true
 
 # The dashboard UI (HTML/JS/CSS). Requests that don't match a file fall
 # through to the Worker, which serves /api/*.
@@ -12,8 +14,7 @@ run_worker_first = ["/api/*"]
 [[d1_databases]]
 binding = "DB"
 database_name = "fishshops"
-# Replace with the id printed by `npx wrangler d1 create fishshops`.
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "7a71d54d-3d0b-46a5-8626-a9847b5b14d5"
 migrations_dir = "db/migrations"
 
 [vars]
@@ -22,8 +23,8 @@ AUTH_MODE = "access"
 ACCESS_TEAM_DOMAIN = ""
 # Application Audience (AUD) tag from Zero Trust > Access > Applications > your app.
 ACCESS_AUD = ""
-# Comma-separated emails that are always admins (so you can't lock yourself out).
-BOOTSTRAP_ADMINS = ""
+# BOOTSTRAP_ADMINS (comma-separated emails that are always admins) is set as a
+# secret in the Cloudflare dashboard so it isn't published in this repo.
 
 [observability]
 enabled = true
