@@ -110,6 +110,11 @@ Under **Settings → Secrets and variables → Actions**, add these repository s
 Optional repository variables: `TOAST_API_HOST` (defaults to `https://ws-api.toasttab.com`)
 and `OVERTIME_MULTIPLIER` (defaults to `1.5`).
 
+**Test Toast first:** once the `TOAST_CLIENT_ID`, `TOAST_CLIENT_SECRET` and `LOCATIONS_JSON`
+secrets are set, run *Actions → Toast connection check*. It signs in and reads one day for each
+location, then reports net sales, labor and any missing Toast permissions in the run summary. It
+writes nothing and doesn't need the Cloudflare secrets.
+
 `.github/workflows/toast-sync.yml` refreshes yesterday and today every 2 hours. Each morning it
 also re-syncs the last 7 days, so late edits and tip adjustments are picked up. **To load
 history**, open *Actions → Toast sync → Run workflow* and enter a start date. For more than a
