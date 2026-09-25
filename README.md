@@ -118,7 +118,7 @@ secrets are set, run *Actions → Toast connection check*. It signs in and reads
 location, then reports net sales, labor and any missing Toast permissions in the run summary. It
 writes nothing and doesn't need the Cloudflare secrets.
 
-`.github/workflows/toast-sync.yml` refreshes yesterday and today every 2 hours. Each morning it
+`.github/workflows/toast-sync.yml` refreshes today every 2 hours. Each morning it
 also re-syncs the last 7 days, so late edits and tip adjustments are picked up. **To load
 history**, open *Actions → Toast sync → Run workflow* and enter a start date. For more than a
 few months, run it in chunks of about 6 months.
