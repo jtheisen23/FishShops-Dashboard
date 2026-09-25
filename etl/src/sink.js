@@ -26,6 +26,7 @@ export class D1Sink {
     this.url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}/query`;
     this.apiToken = apiToken;
     this.log = log;
+    this.rowsWritten = 0; // D1 free plan allows 100k rows written per day
   }
 
   /** Statements for one location-day are sent together so a day is replaced as a unit. */
@@ -52,7 +53,10 @@ export class D1Sink {
         body: JSON.stringify({ sql }),
       });
       const body = await res.json().catch(() => ({}));
-      if (res.ok && body.success !== false) return body;
+      if (res.ok && body.success !== false) {
+        for (const r of [].concat(body.result ?? [])) this.rowsWritten += r?.meta?.rows_written ?? 0;
+        return body;
+      }
       if ((res.status === 429 || res.status >= 500) && attempt < 4) {
         await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
         continue;

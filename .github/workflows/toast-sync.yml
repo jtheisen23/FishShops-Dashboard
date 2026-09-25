@@ -16,8 +16,10 @@ on:
         description: 'Comma-separated location ids (e.g. PL,PB). Empty = all.'
         required: false
 
+# Scheduled runs queue behind each other; each manual backfill (start date +
+# locations) gets its own group so a scheduled run can't displace it.
 concurrency:
-  group: toast-sync
+  group: toast-sync-${{ github.event_name == 'workflow_dispatch' && format('{0}-{1}', inputs.start, inputs.locations) || 'scheduled' }}
   cancel-in-progress: false
 
 permissions:
