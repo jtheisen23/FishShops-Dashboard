@@ -141,6 +141,8 @@ select:focus, input:focus, button:focus-visible { outline: 2px solid var(--accen
 .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
 .seg button { font: inherit; font-size: 12px; border: none; background: none; padding: 5px 10px; cursor: pointer; color: var(--text-2); }
 .seg button[aria-pressed="true"] { background: var(--surface-2); color: var(--text); font-weight: 600; }
+.theme-seg button { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; }
+.theme-seg svg { width: 13px; height: 13px; fill: currentColor; }
 
 /* Tables ------------------------------------------------------------------- */
 .table-wrap { overflow-x: auto; }
