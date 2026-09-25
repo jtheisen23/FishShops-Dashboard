@@ -1,0 +1,19 @@
+{
+  "_comment": "Copy to config/locations.json (or store the JSON in the LOCATIONS_JSON secret). 'id' is a short code used in the dashboard and in user permissions. Find each restaurant GUID in Toast Web > Integrations > Toast API access, or from GET /partners/v1/restaurants.",
+  "locations": [
+    {
+      "id": "PL",
+      "name": "Point Loma",
+      "toastGuid": "00000000-0000-0000-0000-000000000001",
+      "timezone": "America/Los_Angeles",
+      "salariedLaborPerDay": 0
+    },
+    {
+      "id": "PB",
+      "name": "Pacific Beach",
+      "toastGuid": "00000000-0000-0000-0000-000000000002",
+      "timezone": "America/Los_Angeles",
+      "salariedLaborPerDay": 0
+    }
+  ]
+}

@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fish Shop Dashboard</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M4 16c4-6 10-8 16-6l6-4v20l-6-4c-6 2-12 0-16-6z' fill='%232a78d6'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/vendor/echarts.min.js" defer></script>
+  <script src="/app.js" type="module"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M4 16c4-6 10-8 16-6l6-4v20l-6-4c-6 2-12 0-16-6z"/></svg>
+      <span>Fish Shop Dashboard</span>
+    </div>
+    <div class="topbar-right">
+      <span id="freshness" class="muted small"></span>
+      <button id="theme-toggle" class="icon-btn" type="button" aria-label="Toggle dark mode" title="Toggle dark mode">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      </button>
+      <span id="user-badge" class="user-badge"></span>
+      <a class="muted small" href="/cdn-cgi/access/logout">Sign out</a>
+    </div>
+  </header>
+
+  <section class="filters" aria-label="Filters">
+    <label class="field">
+      <span>Date range</span>
+      <select id="f-preset"></select>
+    </label>
+    <span id="f-custom" class="field-group" hidden>
+      <label class="field"><span>From</span><input type="date" id="f-start"></label>
+      <label class="field"><span>To</span><input type="date" id="f-end"></label>
+    </span>
+    <label class="field">
+      <span>Compare to</span>
+      <select id="f-compare"></select>
+    </label>
+    <span id="f-ccustom" class="field-group" hidden>
+      <label class="field"><span>From</span><input type="date" id="f-cstart"></label>
+      <label class="field"><span>To</span><input type="date" id="f-cend"></label>
+    </span>
+    <label class="field">
+      <span>Group by</span>
+      <select id="f-grain">
+        <option value="day">Day</option>
+        <option value="week">Week</option>
+        <option value="month">Month</option>
+      </select>
+    </label>
+    <div class="field">
+      <span>Locations</span>
+      <div id="f-locations" class="chips" role="group" aria-label="Locations"></div>
+    </div>
+    <div id="period-label" class="period-label muted small"></div>
+  </section>
+
+  <nav class="tabs" id="tabs" role="tablist"></nav>
+
+  <main id="view" class="view" aria-live="polite"></main>
+
+  <div id="tooltip-root"></div>
+</body>
+</html>
