@@ -94,6 +94,7 @@ async function main() {
     }
   }
   await sink.close();
+  if (sink.rowsWritten !== undefined) log(`D1 rows written: ${sink.rowsWritten}`);
   if (failures) {
     log(`Finished with ${failures} failed location-day(s)`);
     process.exitCode = 1;
