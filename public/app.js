@@ -241,16 +241,21 @@ async function render() {
 function initTheme() {
   let saved = null;
   try { saved = localStorage.getItem('theme'); } catch { /* storage blocked */ }
-  if (saved === 'light' || saved === 'dark') document.documentElement.dataset.theme = saved;
-  $('theme-toggle').addEventListener('click', () => {
-    const dark = document.documentElement.dataset.theme
-      ? document.documentElement.dataset.theme === 'dark'
-      : matchMedia('(prefers-color-scheme: dark)').matches;
-    const next = dark ? 'light' : 'dark';
-    document.documentElement.dataset.theme = next;
-    try { localStorage.setItem('theme', next); } catch { /* ignore */ }
+  const buttons = [...$('theme-toggle').querySelectorAll('button')];
+  const apply = (mode) => {
+    // 'auto' removes the override so the page follows the device setting.
+    if (mode === 'light' || mode === 'dark') document.documentElement.dataset.theme = mode;
+    else delete document.documentElement.dataset.theme;
+    for (const b of buttons) b.setAttribute('aria-pressed', String(b.dataset.theme === mode));
     rethemeCharts();
-  });
+  };
+  apply(saved === 'light' || saved === 'dark' ? saved : 'auto');
+  for (const b of buttons) {
+    b.addEventListener('click', () => {
+      try { localStorage.setItem('theme', b.dataset.theme); } catch { /* ignore */ }
+      apply(b.dataset.theme);
+    });
+  }
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => rethemeCharts());
 }
 
