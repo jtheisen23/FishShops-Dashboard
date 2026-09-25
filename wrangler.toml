@@ -19,10 +19,10 @@ migrations_dir = "db/migrations"
 
 [vars]
 AUTH_MODE = "access"
-# Your Zero Trust team domain, e.g. "fishshop.cloudflareaccess.com".
-ACCESS_TEAM_DOMAIN = ""
+# Zero Trust team domain that issues the login tokens.
+ACCESS_TEAM_DOMAIN = "thefishshops.cloudflareaccess.com"
 # Application Audience (AUD) tag from Zero Trust > Access > Applications > your app.
-ACCESS_AUD = ""
+ACCESS_AUD = "c7af2fadd00243e523044e082dca3a453a0bc9fb4ded6da1b5c03a1e42abc638"
 # BOOTSTRAP_ADMINS (comma-separated emails that are always admins) is set as a
 # secret in the Cloudflare dashboard so it isn't published in this repo.
 
