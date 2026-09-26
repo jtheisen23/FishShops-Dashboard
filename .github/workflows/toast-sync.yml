@@ -2,7 +2,9 @@ name: Toast sync
 
 on:
   schedule:
-    - cron: '15 */2 * * *'  # every 2 hours: refresh today (the nightly run below finalizes past days)
+    # Hourly at an off-peak minute: GitHub often delays or skips scheduled runs
+    # (especially near :00), so hourly still refreshes today every 1-2 hours.
+    - cron: '17 * * * *'  # refresh today (the nightly run below finalizes past days)
     - cron: '40 11 * * *'   # daily ~4:40am Pacific: re-sync the last 7 days to pick up late edits, tip adjustments and payroll fixes
   workflow_dispatch:
     inputs:

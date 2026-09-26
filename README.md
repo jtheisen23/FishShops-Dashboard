@@ -118,7 +118,7 @@ secrets are set, run *Actions → Toast connection check*. It signs in and reads
 location, then reports net sales, labor and any missing Toast permissions in the run summary. It
 writes nothing and doesn't need the Cloudflare secrets.
 
-`.github/workflows/toast-sync.yml` refreshes today every 2 hours. Each morning it
+`.github/workflows/toast-sync.yml` refreshes today hourly (GitHub sometimes skips scheduled runs, so expect updates every 1–2 hours). Each morning it
 also re-syncs the last 7 days, so late edits and tip adjustments are picked up. **History** is
 loaded by `.github/workflows/toast-backfill.yml`. Every night it works backwards from the
 earliest loaded day toward its `from` date (default 2025-01-01), and stops after 60,000 D1 rows
