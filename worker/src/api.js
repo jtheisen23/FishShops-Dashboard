@@ -149,6 +149,7 @@ export async function mix(env, url, user) {
   return { query: q, dimension, ...r };
 }
 
+// Discount names an admin has grouped (Admin > Category groups > Discounts) are merged here.
 export async function discounts(env, url, user) {
   requireSection(user, 'discounts');
   const q = readQuery(url, user);
@@ -156,20 +157,23 @@ export async function discounts(env, url, user) {
     bothPeriods(
       env,
       q,
-      `SELECT discount_name, SUM(uses) AS uses, SUM(amount) AS amount
-         FROM discount_sales WHERE ${RANGE} GROUP BY discount_name ORDER BY amount DESC`,
+      `SELECT COALESCE(g.group_name, d.discount_name) AS discount_name, SUM(uses) AS uses, SUM(amount) AS amount
+         FROM discount_sales d LEFT JOIN category_groups g ON g.dimension = 'discount' AND g.source_label = d.discount_name
+        WHERE ${RANGE} GROUP BY COALESCE(g.group_name, d.discount_name) ORDER BY amount DESC`,
     ),
     bothPeriods(
       env,
       q,
-      `SELECT location_id, discount_name, SUM(uses) AS uses, SUM(amount) AS amount
-         FROM discount_sales WHERE ${RANGE} GROUP BY location_id, discount_name`,
+      `SELECT location_id, COALESCE(g.group_name, d.discount_name) AS discount_name, SUM(uses) AS uses, SUM(amount) AS amount
+         FROM discount_sales d LEFT JOIN category_groups g ON g.dimension = 'discount' AND g.source_label = d.discount_name
+        WHERE ${RANGE} GROUP BY location_id, COALESCE(g.group_name, d.discount_name)`,
     ),
     bothPeriods(
       env,
       q,
-      `SELECT approver, discount_name, SUM(uses) AS uses, SUM(amount) AS amount
-         FROM discount_sales WHERE ${RANGE} AND approver <> '' GROUP BY approver, discount_name ORDER BY amount DESC`,
+      `SELECT approver, COALESCE(g.group_name, d.discount_name) AS discount_name, SUM(uses) AS uses, SUM(amount) AS amount
+         FROM discount_sales d LEFT JOIN category_groups g ON g.dimension = 'discount' AND g.source_label = d.discount_name
+        WHERE ${RANGE} AND approver <> '' GROUP BY approver, COALESCE(g.group_name, d.discount_name) ORDER BY amount DESC`,
     ),
     bothPeriods(
       env,
