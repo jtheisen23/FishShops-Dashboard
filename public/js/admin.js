@@ -145,23 +145,45 @@ let groupsDimension = 'sales_category';
 async function groupsCard(ctx) {
   const body = h('div');
   const status = h('span', { class: 'muted small', role: 'status' });
-  const listId = 'group-names';
 
   const load = async () => {
     const data = await ctx.api(`/api/admin/groups?dimension=${groupsDimension}`, null, { noQuery: true });
     const inputs = data.labels.map((l) => ({
       label: l.label,
-      input: h('input', { type: 'text', value: l.group_name || '', placeholder: 'Keep as is', list: listId, 'aria-label': `Group for ${l.label}`, maxlength: 60 }),
+      // No <datalist>: rebuilding its popup on each keystroke made typing lag.
+      input: h('input', { type: 'text', value: l.group_name || '', placeholder: 'Keep as is', autocomplete: 'off', style: { width: '100%', maxWidth: '340px' }, 'aria-label': `Group for ${l.label}`, maxlength: 60 }),
       net: l.net_sales,
       lastSeen: l.last_seen,
     }));
-    const datalist = h('datalist', { id: listId });
-    const refreshSuggestions = () => {
+
+    // Existing group names as buttons that fill the last box you clicked into.
+    // Refreshed only when a box loses focus, never while typing.
+    let lastFocused = null;
+    const chips = h('div', { class: 'chips', style: { margin: '4px 0 10px' } });
+    const refreshChips = () => {
       const names = [...new Set(inputs.map((i) => i.input.value.trim()).filter(Boolean))].sort();
-      datalist.replaceChildren(...names.map((n) => h('option', { value: n })));
+      chips.replaceChildren(
+        ...(names.length ? [h('span', { class: 'muted small', style: { alignSelf: 'center' } }, 'Existing groups:')] : []),
+        ...names.map((n) => h('button', {
+          type: 'button',
+          class: 'chip',
+          title: 'Fill the selected row with this group',
+          // mousedown keeps focus on the box instead of moving it to the button
+          onmousedown: (e) => e.preventDefault(),
+          onclick: () => {
+            const target = lastFocused || inputs.find((i) => !i.input.value.trim())?.input;
+            if (!target) return;
+            target.value = n;
+            target.focus();
+          },
+        }, n)),
+      );
     };
-    inputs.forEach((i) => i.input.addEventListener('input', refreshSuggestions));
-    refreshSuggestions();
+    for (const i of inputs) {
+      i.input.addEventListener('focus', () => { lastFocused = i.input; });
+      i.input.addEventListener('change', refreshChips);
+    }
+    refreshChips();
 
     const save = async () => {
       status.textContent = 'Saving…';
@@ -177,6 +199,7 @@ async function groupsCard(ctx) {
     };
 
     body.replaceChildren(
+      chips,
       inputs.length
         ? h('div', { class: 'table-wrap' },
             h('table', {},
@@ -189,7 +212,6 @@ async function groupsCard(ctx) {
                 h('td', {}, fmt.money(i.net)),
                 h('td', { class: 'text' }, i.input))))))
         : h('div', { class: 'muted' }, 'No data for the last 12 months yet.'),
-      datalist,
       h('div', { class: 'card-tools', style: { marginTop: '12px' } },
         h('button', { class: 'btn primary', type: 'button', onclick: save, disabled: !inputs.length }, 'Save groups'),
         status),
