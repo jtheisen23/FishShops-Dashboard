@@ -142,6 +142,11 @@ sign in with. Then choose:
   labor data from the API, and one without Discounts gets sales numbers with gross/discount/void
   fields removed.
 
+**Category groups** (Admin tab): combine Toast sales categories, dining options or revenue
+centers into reporting groups, e.g. "Draft", "Draft Beer" and "HH Draft" → "Beer". Groups are
+applied when the dashboard reads data, so they cover all history immediately and never change the
+stored Toast data.
+
 People also have to be allowed by the Access policy (step 3.3) to reach the sign-in page.
 
 ## How numbers are calculated

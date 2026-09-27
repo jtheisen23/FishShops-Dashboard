@@ -1,6 +1,7 @@
 // User management for admins: who can see which locations and sections.
 
 import { HttpError, requireAdmin, SECTIONS } from './auth.js';
+import { MIX_DIMENSIONS } from './api.js';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -99,4 +100,56 @@ export async function auditLog(env, user) {
   requireAdmin(user);
   const { results } = await env.DB.prepare('SELECT at, actor, action, detail FROM audit_log ORDER BY id DESC LIMIT 200').all();
   return { entries: results };
+}
+
+// ---------------------------------------------------------------------------
+// Category groups: merge Toast labels (sales categories, dining options,
+// revenue centers) into admin-defined groups for reporting.
+// ---------------------------------------------------------------------------
+
+function readDimension(value) {
+  if (!MIX_DIMENSIONS.has(value)) throw new HttpError(400, 'Unknown dimension');
+  return value;
+}
+
+/** Every label Toast has used for a dimension, with last-year sales for context and its current group. */
+export async function listGroups(env, user, url) {
+  requireAdmin(user);
+  const dimension = readDimension(url.searchParams.get('dimension') || 'sales_category');
+  const { results } = await env.DB.prepare(
+    `SELECT m.label, ROUND(SUM(m.net_sales), 2) AS net_sales, MAX(m.business_date) AS last_seen, g.group_name
+       FROM sales_mix m
+       LEFT JOIN category_groups g ON g.dimension = m.dimension AND g.source_label = m.label
+      WHERE m.dimension = ? AND m.business_date >= date('now', '-365 days')
+      GROUP BY m.label ORDER BY net_sales DESC`,
+  )
+    .bind(dimension)
+    .all();
+  return { dimension, labels: results };
+}
+
+/** Replaces all groupings for one dimension. Body: { dimension, mappings: [{ label, group }] } */
+export async function saveGroups(env, user, body) {
+  requireAdmin(user);
+  const dimension = readDimension(body?.dimension);
+  const mappings = (Array.isArray(body?.mappings) ? body.mappings : [])
+    .map((m) => ({ label: String(m?.label ?? '').trim(), group: String(m?.group ?? '').trim().slice(0, 60) }))
+    .filter((m) => m.label && m.group && m.group !== m.label);
+  if (mappings.length > 500) throw new HttpError(400, 'Too many mappings');
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM category_groups WHERE dimension = ?').bind(dimension),
+    ...mappings.map((m) =>
+      env.DB.prepare('INSERT INTO category_groups (dimension, source_label, group_name) VALUES (?, ?, ?)').bind(
+        dimension,
+        m.label,
+        m.group,
+      ),
+    ),
+    env.DB.prepare('INSERT INTO audit_log (actor, action, detail) VALUES (?, ?, ?)').bind(
+      user.email,
+      'save_groups',
+      JSON.stringify({ dimension, mappings }),
+    ),
+  ]);
+  return { ok: true, saved: mappings.length };
 }
