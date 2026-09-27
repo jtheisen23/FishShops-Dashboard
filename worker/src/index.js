@@ -42,10 +42,13 @@ async function route(request, env) {
         return json(await admin.listUsers(env, user));
       case '/api/admin/audit':
         return json(await admin.auditLog(env, user));
+      case '/api/admin/groups':
+        return json(await admin.listGroups(env, user, url));
     }
   }
 
-  if (pathname === '/api/admin/users' && (method === 'POST' || method === 'DELETE')) {
+  if ((pathname === '/api/admin/users' && (method === 'POST' || method === 'DELETE')) ||
+      (pathname === '/api/admin/groups' && method === 'POST')) {
     // Same-origin check: blocks cross-site form posts riding the Access cookie.
     const origin = request.headers.get('Origin');
     if (origin && origin !== url.origin) throw new HttpError(403, 'Cross-origin request refused');
@@ -56,6 +59,7 @@ async function route(request, env) {
       } catch {
         throw new HttpError(400, 'Invalid JSON');
       }
+      if (pathname === '/api/admin/groups') return json(await admin.saveGroups(env, user, body));
       return json(await admin.saveUser(env, user, body));
     }
     return json(await admin.deleteUser(env, user, url.searchParams.get('email')));

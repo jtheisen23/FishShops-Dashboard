@@ -106,7 +106,7 @@ export async function overview(env, url, user) {
   return { query: q, totals, daily, labor, laborDaily };
 }
 
-const MIX_DIMENSIONS = new Set(['dining_option', 'revenue_center', 'sales_category']);
+export const MIX_DIMENSIONS = new Set(['dining_option', 'revenue_center', 'sales_category']);
 
 export async function mix(env, url, user) {
   requireSection(user, 'sales');
@@ -134,11 +134,16 @@ export async function mix(env, url, user) {
     return { query: q, dimension, ...r };
   }
   if (!MIX_DIMENSIONS.has(dimension)) throw new HttpError(400, 'Unknown dimension');
+  // Labels an admin has grouped (Admin > Category groups) are merged here.
   const r = await bothPeriods(
     env,
     q,
-    `SELECT location_id, label, SUM(orders) AS orders, SUM(quantity) AS quantity, SUM(net_sales) AS net_sales
-       FROM sales_mix WHERE ${RANGE} AND dimension = ? GROUP BY location_id, label ORDER BY net_sales DESC`,
+    `SELECT location_id, COALESCE(g.group_name, m.label) AS label, SUM(orders) AS orders,
+            SUM(quantity) AS quantity, SUM(net_sales) AS net_sales
+       FROM sales_mix m
+       LEFT JOIN category_groups g ON g.dimension = m.dimension AND g.source_label = m.label
+      WHERE ${RANGE} AND m.dimension = ?
+      GROUP BY location_id, COALESCE(g.group_name, m.label) ORDER BY net_sales DESC`,
     [dimension],
   );
   return { query: q, dimension, ...r };
@@ -219,8 +224,12 @@ export async function items(env, url, user) {
   const r = await bothPeriods(
     env,
     q,
-    `SELECT item_name, sales_category, SUM(quantity) AS quantity, SUM(gross_sales) AS gross_sales, SUM(net_sales) AS net_sales
-       FROM item_sales WHERE ${RANGE} GROUP BY item_name, sales_category ORDER BY net_sales DESC LIMIT ?`,
+    `SELECT item_name, COALESCE(g.group_name, i.sales_category) AS sales_category, SUM(quantity) AS quantity,
+            SUM(gross_sales) AS gross_sales, SUM(net_sales) AS net_sales
+       FROM item_sales i
+       LEFT JOIN category_groups g ON g.dimension = 'sales_category' AND g.source_label = i.sales_category
+      WHERE ${RANGE}
+      GROUP BY item_name, COALESCE(g.group_name, i.sales_category) ORDER BY net_sales DESC LIMIT ?`,
     [limit],
   );
   return { query: q, limit, ...r };

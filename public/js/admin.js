@@ -1,6 +1,6 @@
 // Admin tab: manage who can see which locations and sections.
 
-import { h } from './util.js';
+import { fmt, h } from './util.js';
 
 const SECTION_LABELS = { sales: 'Sales', discounts: 'Discounts & comps', labor: 'Labor', items: 'Menu items' };
 
@@ -43,8 +43,9 @@ export async function adminView(ctx) {
           h('thead', {}, h('tr', {}, ['User', 'Role', 'Locations', 'Can see', ''].map((l) => h('th', { class: 'text' }, l)))),
           h('tbody', {}, rows.length ? rows : h('tr', {}, h('td', { class: 'text', colspan: 5 }, 'No users yet — add one.')))))),
     formHolder,
+    await groupsCard(ctx),
     h('section', { class: 'card' },
-      h('div', { class: 'card-head' }, h('div', {}, h('h2', {}, 'Recent permission changes'))),
+      h('div', { class: 'card-head' }, h('div', {}, h('h2', {}, 'Recent changes'))),
       audit.entries.length
         ? h('div', { class: 'table-wrap' }, h('table', {},
             h('thead', {}, h('tr', {}, ['When (UTC)', 'By', 'Action', 'Detail'].map((l) => h('th', { class: 'text' }, l)))),
@@ -128,4 +129,90 @@ function userForm(ctx, data, u, onSaved, onCancel) {
       h('button', { class: 'btn', type: 'button', onclick: onCancel }, 'Cancel'),
       isNew ? null : h('button', { class: 'btn danger', type: 'button', onclick: remove }, 'Remove user')),
   );
+}
+
+// ---------------------------------------------------------------------------
+// Category groups: merge Toast labels into reporting groups
+// ---------------------------------------------------------------------------
+const GROUP_DIMENSIONS = [
+  ['sales_category', 'Sales categories'],
+  ['dining_option', 'Dining options'],
+  ['revenue_center', 'Revenue centers'],
+];
+let groupsDimension = 'sales_category';
+
+async function groupsCard(ctx) {
+  const body = h('div');
+  const status = h('span', { class: 'muted small', role: 'status' });
+  const listId = 'group-names';
+
+  const load = async () => {
+    const data = await ctx.api(`/api/admin/groups?dimension=${groupsDimension}`, null, { noQuery: true });
+    const inputs = data.labels.map((l) => ({
+      label: l.label,
+      input: h('input', { type: 'text', value: l.group_name || '', placeholder: 'Keep as is', list: listId, 'aria-label': `Group for ${l.label}`, maxlength: 60 }),
+      net: l.net_sales,
+      lastSeen: l.last_seen,
+    }));
+    const datalist = h('datalist', { id: listId });
+    const refreshSuggestions = () => {
+      const names = [...new Set(inputs.map((i) => i.input.value.trim()).filter(Boolean))].sort();
+      datalist.replaceChildren(...names.map((n) => h('option', { value: n })));
+    };
+    inputs.forEach((i) => i.input.addEventListener('input', refreshSuggestions));
+    refreshSuggestions();
+
+    const save = async () => {
+      status.textContent = 'Saving…';
+      try {
+        const res = await ctx.post('/api/admin/groups', {
+          dimension: groupsDimension,
+          mappings: inputs.map((i) => ({ label: i.label, group: i.input.value })),
+        });
+        status.textContent = `Saved ${res.saved} grouping${res.saved === 1 ? '' : 's'}. Reports use them right away.`;
+      } catch (err) {
+        status.textContent = err.message;
+      }
+    };
+
+    body.replaceChildren(
+      inputs.length
+        ? h('div', { class: 'table-wrap' },
+            h('table', {},
+              h('thead', {}, h('tr', {},
+                h('th', { class: 'text' }, 'Toast name'),
+                h('th', {}, 'Net sales, last 12 months'),
+                h('th', { class: 'text' }, 'Group as'))),
+              h('tbody', {}, inputs.map((i) => h('tr', {},
+                h('td', { class: 'text' }, i.label),
+                h('td', {}, fmt.money(i.net)),
+                h('td', { class: 'text' }, i.input))))))
+        : h('div', { class: 'muted' }, 'No data for the last 12 months yet.'),
+      datalist,
+      h('div', { class: 'card-tools', style: { marginTop: '12px' } },
+        h('button', { class: 'btn primary', type: 'button', onclick: save, disabled: !inputs.length }, 'Save groups'),
+        status),
+    );
+  };
+
+  const buttons = GROUP_DIMENSIONS.map(([key, label]) =>
+    h('button', {
+      type: 'button',
+      'aria-pressed': String(key === groupsDimension),
+      onclick: async () => {
+        groupsDimension = key;
+        buttons.forEach((b, i) => b.setAttribute('aria-pressed', String(GROUP_DIMENSIONS[i][0] === key)));
+        status.textContent = '';
+        await load();
+      },
+    }, label));
+
+  await load();
+  return h('section', { class: 'card' },
+    h('div', { class: 'card-head' },
+      h('div', {},
+        h('h2', {}, 'Category groups'),
+        h('div', { class: 'sub' }, 'Combine Toast names into one reporting group — e.g. type "Beer" next to Draft, Draft Beer and HH Draft. Leave blank to keep a name as is. Applies to all dates instantly; Toast data is not changed.')),
+      h('div', { class: 'seg', role: 'group' }, buttons)),
+    body);
 }
