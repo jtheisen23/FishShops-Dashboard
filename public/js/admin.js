@@ -138,6 +138,7 @@ const GROUP_DIMENSIONS = [
   ['sales_category', 'Sales categories'],
   ['dining_option', 'Dining options'],
   ['revenue_center', 'Revenue centers'],
+  ['discount', 'Discounts'],
 ];
 let groupsDimension = 'sales_category';
 
@@ -181,7 +182,7 @@ async function groupsCard(ctx) {
             h('table', {},
               h('thead', {}, h('tr', {},
                 h('th', { class: 'text' }, 'Toast name'),
-                h('th', {}, 'Net sales, last 12 months'),
+                h('th', {}, groupsDimension === 'discount' ? 'Discounts, last 12 months' : 'Net sales, last 12 months'),
                 h('th', { class: 'text' }, 'Group as'))),
               h('tbody', {}, inputs.map((i) => h('tr', {},
                 h('td', { class: 'text' }, i.label),
@@ -212,7 +213,7 @@ async function groupsCard(ctx) {
     h('div', { class: 'card-head' },
       h('div', {},
         h('h2', {}, 'Category groups'),
-        h('div', { class: 'sub' }, 'Combine Toast names into one reporting group — e.g. type "Beer" next to Draft, Draft Beer and HH Draft. Leave blank to keep a name as is. Applies to all dates instantly; Toast data is not changed.')),
+        h('div', { class: 'sub' }, 'Combine Toast names into one reporting group — e.g. type "Beer" next to Draft, Draft Beer and HH Draft, or "Manager Comps" next to each manager comp discount. Leave blank to keep a name as is. Applies to all dates instantly; Toast data is not changed.')),
       h('div', { class: 'seg', role: 'group' }, buttons)),
     body);
 }

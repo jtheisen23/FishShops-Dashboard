@@ -104,11 +104,13 @@ export async function auditLog(env, user) {
 
 // ---------------------------------------------------------------------------
 // Category groups: merge Toast labels (sales categories, dining options,
-// revenue centers) into admin-defined groups for reporting.
+// revenue centers, discounts) into admin-defined groups for reporting.
 // ---------------------------------------------------------------------------
 
+const GROUP_DIMENSIONS = new Set([...MIX_DIMENSIONS, 'discount']);
+
 function readDimension(value) {
-  if (!MIX_DIMENSIONS.has(value)) throw new HttpError(400, 'Unknown dimension');
+  if (!GROUP_DIMENSIONS.has(value)) throw new HttpError(400, 'Unknown dimension');
   return value;
 }
 
@@ -116,15 +118,25 @@ function readDimension(value) {
 export async function listGroups(env, user, url) {
   requireAdmin(user);
   const dimension = readDimension(url.searchParams.get('dimension') || 'sales_category');
-  const { results } = await env.DB.prepare(
-    `SELECT m.label, ROUND(SUM(m.net_sales), 2) AS net_sales, MAX(m.business_date) AS last_seen, g.group_name
-       FROM sales_mix m
-       LEFT JOIN category_groups g ON g.dimension = m.dimension AND g.source_label = m.label
-      WHERE m.dimension = ? AND m.business_date >= date('now', '-365 days')
-      GROUP BY m.label ORDER BY net_sales DESC`,
-  )
-    .bind(dimension)
-    .all();
+  // Discounts live in their own table; the others in sales_mix. Either way the
+  // amount column is last-12-month dollars (net sales, or discount amount).
+  const stmt =
+    dimension === 'discount'
+      ? env.DB.prepare(
+          `SELECT d.discount_name AS label, ROUND(SUM(d.amount), 2) AS net_sales, MAX(d.business_date) AS last_seen, g.group_name
+             FROM discount_sales d
+             LEFT JOIN category_groups g ON g.dimension = 'discount' AND g.source_label = d.discount_name
+            WHERE d.business_date >= date('now', '-365 days')
+            GROUP BY d.discount_name ORDER BY net_sales DESC`,
+        )
+      : env.DB.prepare(
+          `SELECT m.label, ROUND(SUM(m.net_sales), 2) AS net_sales, MAX(m.business_date) AS last_seen, g.group_name
+             FROM sales_mix m
+             LEFT JOIN category_groups g ON g.dimension = m.dimension AND g.source_label = m.label
+            WHERE m.dimension = ? AND m.business_date >= date('now', '-365 days')
+            GROUP BY m.label ORDER BY net_sales DESC`,
+        ).bind(dimension);
+  const { results } = await stmt.all();
   return { dimension, labels: results };
 }
 
