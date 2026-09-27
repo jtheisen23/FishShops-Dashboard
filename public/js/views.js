@@ -434,6 +434,8 @@ function renderMix(ctx, data) {
 // ---------------------------------------------------------------------------
 // Discounts
 // ---------------------------------------------------------------------------
+const approverState = { view: 'discount' };
+
 export async function discounts(ctx) {
   const data = await ctx.api('/api/discounts');
   const hasCmp = !!ctx.q.compare;
@@ -492,6 +494,43 @@ export async function discounts(ctx) {
     filename: 'discounts-by-approver',
   });
 
+  // Comps by approver chart: one bar per approver (top 15 by amount), either
+  // split by discount type or compared with the comparison period.
+  const apprTotals = sumBy(data.byApprover.current, 'approver', ['amount', 'uses']);
+  const apprCmp = hasCmp ? sumBy(data.byApprover.compare, 'approver', ['amount']) : null;
+  const approvers = [...apprTotals.entries()].sort((a, b) => b[1].amount - a[1].amount).slice(0, 15).map(([name]) => name);
+  const apprEl = chartBox();
+  apprEl.style.height = `${Math.max(220, approvers.length * 34 + 70)}px`;
+  const drawApprovers = () => {
+    window.echarts.getInstanceByDom(apprEl)?.dispose();
+    if (approverState.view === 'compare' && hasCmp) {
+      barChart(apprEl, {
+        categories: approvers,
+        series: [
+          { name: 'Current', colorIndex: 0, data: approvers.map((a) => apprTotals.get(a)?.amount ?? 0) },
+          { name: 'Comparison', color: 'compare', data: approvers.map((a) => apprCmp.get(a)?.amount ?? 0) },
+        ],
+        horizontal: true, format: fmt.money, axisFormat: fmt.moneyShort,
+      });
+      return;
+    }
+    // Stack by discount type: the 5 biggest types get their own colour, the rest fold into Other.
+    const types = [...sumBy(data.byApprover.current, 'discount_name', ['amount']).entries()]
+      .sort((a, b) => b[1].amount - a[1].amount).map(([t]) => t);
+    const shown = types.slice(0, 5);
+    const cell = new Map((data.byApprover.current || []).map((r) => [`${r.approver}|${r.discount_name}`, r.amount]));
+    const series = shown.map((t, i) => ({ name: t, colorIndex: i, data: approvers.map((a) => cell.get(`${a}|${t}`) ?? 0) }));
+    if (types.length > shown.length) {
+      const rest = types.slice(5);
+      series.push({ name: 'Other', color: 'compare', data: approvers.map((a) => rest.reduce((sum, t) => sum + (cell.get(`${a}|${t}`) ?? 0), 0)) });
+    }
+    barChart(apprEl, { categories: approvers, series, horizontal: true, stack: true, format: fmt.money, axisFormat: fmt.moneyShort });
+  };
+  const apprTools = [
+    hasCmp ? seg([['discount', 'By discount'], ['compare', 'vs comparison']], approverState.view, (v) => { approverState.view = v; drawApprovers(); }) : null,
+    csvButton(() => apprTable),
+  ];
+
   const barEl = chartBox();
   const top = rows.slice(0, 10);
   const barSeries = [{ name: 'Current', colorIndex: 0, data: top.map((r) => r.amount) }];
@@ -513,12 +552,14 @@ export async function discounts(ctx) {
       card('Discount % of gross by location', subtitle(ctx), null, locEl)),
     card('Discount % trend', `${subtitle(ctx)} · by ${ctx.q.grain}`, null, trendEl),
     card('All discounts', subtitle(ctx), csvButton(() => nameTable), rows.length ? nameTable.el : h('div', { class: 'empty' }, 'No discounts in this period')),
-    card('Comps by approver', 'Discounts that required a manager approval', csvButton(() => apprTable), apprRows.length ? apprTable.el : h('div', { class: 'empty' }, 'No approved comps in this period')),
+    card('Comps by approver', `Discounts that required a manager approval · ${subtitle(ctx)}${approvers.length === 15 && apprTotals.size > 15 ? ' · top 15 shown' : ''}`, apprTools,
+      apprRows.length ? [apprEl, apprTable.el] : h('div', { class: 'empty' }, 'No approved comps in this period')),
   );
   later(() => {
     barChart(barEl, { categories: top.map((r) => r.name), series: barSeries, horizontal: true, format: fmt.money, axisFormat: fmt.moneyShort });
     barChart(locEl, { categories: ids.map((id) => ctx.loc(id).name), series: locSeries, horizontal: true, format: fmt.pct, axisFormat: fmt.pct });
     lineChart(trendEl, { ...trend, format: fmt.pct, zeroBased: false });
+    if (apprRows.length) drawApprovers();
   });
   return node;
 }
