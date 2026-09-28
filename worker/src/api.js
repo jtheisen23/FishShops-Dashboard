@@ -138,12 +138,12 @@ export async function mix(env, url, user) {
   const r = await bothPeriods(
     env,
     q,
-    `SELECT location_id, COALESCE(g.group_name, m.label) AS label, SUM(orders) AS orders,
+    `SELECT location_id, COALESCE(g.group_name, m.label) AS label, m.label AS source_label, SUM(orders) AS orders,
             SUM(quantity) AS quantity, SUM(net_sales) AS net_sales
        FROM sales_mix m
        LEFT JOIN category_groups g ON g.dimension = m.dimension AND g.source_label = m.label
       WHERE ${RANGE} AND m.dimension = ?
-      GROUP BY location_id, COALESCE(g.group_name, m.label) ORDER BY net_sales DESC`,
+      GROUP BY location_id, COALESCE(g.group_name, m.label), m.label ORDER BY net_sales DESC`,
     [dimension],
   );
   return { query: q, dimension, ...r };
@@ -157,16 +157,16 @@ export async function discounts(env, url, user) {
     bothPeriods(
       env,
       q,
-      `SELECT COALESCE(g.group_name, d.discount_name) AS discount_name, SUM(uses) AS uses, SUM(amount) AS amount
+      `SELECT COALESCE(g.group_name, d.discount_name) AS discount_name, d.discount_name AS source_name, SUM(uses) AS uses, SUM(amount) AS amount
          FROM discount_sales d LEFT JOIN category_groups g ON g.dimension = 'discount' AND g.source_label = d.discount_name
-        WHERE ${RANGE} GROUP BY COALESCE(g.group_name, d.discount_name) ORDER BY amount DESC`,
+        WHERE ${RANGE} GROUP BY COALESCE(g.group_name, d.discount_name), d.discount_name ORDER BY amount DESC`,
     ),
     bothPeriods(
       env,
       q,
-      `SELECT location_id, COALESCE(g.group_name, d.discount_name) AS discount_name, SUM(uses) AS uses, SUM(amount) AS amount
+      `SELECT location_id, COALESCE(g.group_name, d.discount_name) AS discount_name, d.discount_name AS source_name, SUM(uses) AS uses, SUM(amount) AS amount
          FROM discount_sales d LEFT JOIN category_groups g ON g.dimension = 'discount' AND g.source_label = d.discount_name
-        WHERE ${RANGE} GROUP BY location_id, COALESCE(g.group_name, d.discount_name)`,
+        WHERE ${RANGE} GROUP BY location_id, COALESCE(g.group_name, d.discount_name), d.discount_name`,
     ),
     bothPeriods(
       env,

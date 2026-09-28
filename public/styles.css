@@ -154,6 +154,12 @@ th { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: v
 th[aria-sort="ascending"]::after { content: " ▲"; }
 th[aria-sort="descending"]::after { content: " ▼"; }
 td { font-variant-numeric: tabular-nums; }
+/* Expandable group rows */
+.row-toggle { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.row-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.row-toggle .caret { display: inline-block; width: 12px; color: var(--muted); font-size: 11px; }
+tr.child-row td { color: var(--text-2); font-size: 12px; background: var(--surface-2); }
+td.child-cell { padding-left: 32px; }
 tr.total td { font-weight: 650; border-top: 1px solid var(--axis); border-bottom: none; }
 .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 8px; vertical-align: -1px; }
 .pos { color: var(--good); }
