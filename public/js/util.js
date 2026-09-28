@@ -247,10 +247,15 @@ export function totals(rows, fields) {
 // ---------------------------------------------------------------------------
 /**
  * columns: [{ key, label, fmt?, text?: bool, value?: row => sortable value, render?: row => Node|string, csv?: row => value }]
+ * A row may have `children` (rows with the same columns). Such rows get a
+ * toggle in the first column and start collapsed; `expander` is an
+ * Expand all / Collapse all button (null when no row has children).
  */
 export function dataTable({ columns, rows, total, sortKey, sortDir = 'desc', filename = 'export' }) {
   let key = sortKey ?? null;
   let dir = sortDir;
+  const expanded = new Set();
+  const expandable = rows.filter((r) => r.children?.length);
   const tbody = h('tbody');
   const tfoot = h('tfoot');
   const headers = columns.map((c) =>
@@ -270,15 +275,31 @@ export function dataTable({ columns, rows, total, sortKey, sortDir = 'desc', fil
     render();
   }
 
-  function cell(c, r) {
-    if (c.render) return h('td', { class: c.text ? 'text' : null }, c.render(r));
+  function content(c, r) {
+    if (c.render) return c.render(r);
     const v = valueOf(c, r);
-    return h('td', { class: c.text ? 'text' : null }, c.fmt ? c.fmt(v, r) : v ?? '—');
+    return c.fmt ? c.fmt(v, r) : v ?? '—';
   }
 
-  function render() {
+  function cell(c, r, i, { parent, child } = {}) {
+    const cls = [c.text ? 'text' : null, child && i === 0 ? 'child-cell' : null].filter(Boolean).join(' ') || null;
+    if (i === 0 && parent) {
+      const open = expanded.has(r);
+      return h('td', { class: cls },
+        h('button', {
+          type: 'button',
+          class: 'row-toggle',
+          'aria-expanded': String(open),
+          title: open ? 'Hide details' : `Show ${r.children.length} item${r.children.length === 1 ? '' : 's'}`,
+          onclick: () => { open ? expanded.delete(r) : expanded.add(r); render(); },
+        }, h('span', { class: 'caret', 'aria-hidden': 'true' }, open ? '▾' : '▸'), content(c, r)));
+    }
+    return h('td', { class: cls }, content(c, r));
+  }
+
+  function sortRows(list) {
     const col = columns.find((c) => c.key === key);
-    const sorted = [...rows];
+    const sorted = [...list];
     if (col) {
       sorted.sort((a, b) => {
         const va = valueOf(col, a);
@@ -290,13 +311,38 @@ export function dataTable({ columns, rows, total, sortKey, sortDir = 'desc', fil
         return dir === 'asc' ? cmp : -cmp;
       });
     }
+    return sorted;
+  }
+
+  function render() {
     headers.forEach((th, i) => {
       if (columns[i].key === key) th.setAttribute('aria-sort', dir === 'asc' ? 'ascending' : 'descending');
       else th.removeAttribute('aria-sort');
     });
-    tbody.replaceChildren(...sorted.map((r) => h('tr', {}, columns.map((c) => cell(c, r)))));
-    tfoot.replaceChildren(...(total ? [h('tr', { class: 'total' }, columns.map((c) => cell(c, total)))] : []));
+    const trs = [];
+    for (const r of sortRows(rows)) {
+      const parent = !!r.children?.length;
+      trs.push(h('tr', { class: parent ? 'parent-row' : null }, columns.map((c, i) => cell(c, r, i, { parent }))));
+      if (parent && expanded.has(r)) {
+        for (const ch of sortRows(r.children)) trs.push(h('tr', { class: 'child-row' }, columns.map((c, i) => cell(c, ch, i, { child: true }))));
+      }
+    }
+    tbody.replaceChildren(...trs);
+    tfoot.replaceChildren(...(total ? [h('tr', { class: 'total' }, columns.map((c, i) => cell(c, total, i)))] : []));
+    if (expander) expander.textContent = expanded.size === expandable.length ? 'Collapse all' : 'Expand all';
   }
+
+  const expander = expandable.length
+    ? h('button', {
+        class: 'btn',
+        type: 'button',
+        onclick: () => {
+          if (expanded.size === expandable.length) expanded.clear();
+          else expandable.forEach((r) => expanded.add(r));
+          render();
+        },
+      })
+    : null;
   render();
 
   const table = h('table', {}, h('thead', {}, h('tr', {}, headers)), tbody, tfoot);
@@ -308,17 +354,24 @@ export function dataTable({ columns, rows, total, sortKey, sortDir = 'desc', fil
       if (/^[=+\-@]/.test(s)) s = `'${s}`; // stop spreadsheets treating names as formulas
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
+    const line = (r, child) => columns.map((c, i) => {
+      const v = c.csv ? c.csv(r) : valueOf(c, r);
+      return esc(child && i === 0 ? `   ${v ?? ''}` : v);
+    }).join(',');
+    // Export includes every detail row, indented under its group.
     const lines = [columns.map((c) => esc(c.label)).join(',')];
-    for (const r of [...rows, ...(total ? [total] : [])]) {
-      lines.push(columns.map((c) => esc(c.csv ? c.csv(r) : valueOf(c, r))).join(','));
+    for (const r of sortRows(rows)) {
+      lines.push(line(r));
+      for (const ch of r.children ? sortRows(r.children) : []) lines.push(line(ch, true));
     }
+    if (total) lines.push(line(total));
     const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
     const a = h('a', { href: URL.createObjectURL(blob), download: `${filename}.csv` });
     document.body.append(a);
     a.click();
     setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
   };
-  return { el: h('div', { class: 'table-wrap' }, table), exportCsv };
+  return { el: h('div', { class: 'table-wrap' }, table), exportCsv, expander };
 }
 
 /** Delta cell: coloured +/-% with an arrow icon so it's never colour alone. */

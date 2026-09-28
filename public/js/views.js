@@ -370,19 +370,42 @@ function renderMix(ctx, data) {
   const cmp = hasCmp ? sumBy(data.compare, 'label', fields) : new Map();
   const curTotal = totals(data.current, fields).net_sales;
   const cmpTotal = hasCmp ? totals(data.compare, fields).net_sales : null;
-  const byLoc = new Map((data.current || []).map((r) => [`${r.location_id}|${r.label}`, r]));
+  // Rows arrive per (location, group, Toast name). Charts use group totals;
+  // the table expands a group into the Toast names inside it.
+  const byLoc = sumBy(data.current, (r) => `${r.location_id}|${r.label}`, fields);
   const locTotals = sumBy(data.current, 'location_id', ['net_sales']);
+  const srcKey = (r) => `${r.label}|${r.source_label ?? r.label}`;
+  const curSrc = sumBy(data.current, srcKey, fields);
+  const cmpSrc = hasCmp ? sumBy(data.compare, srcKey, fields) : new Map();
+  const locSrc = sumBy(data.current, (r) => `${r.location_id}|${srcKey(r)}`, fields);
+  const sourcesOf = new Map();
+  for (const r of [...(data.current || []), ...(data.compare || [])]) {
+    if (!sourcesOf.has(r.label)) sourcesOf.set(r.label, new Set());
+    sourcesOf.get(r.label).add(r.source_label ?? r.label);
+  }
 
   const labels = [...new Set([...cur.keys(), ...cmp.keys()])].sort((a, b) => (cur.get(b)?.net_sales || 0) - (cur.get(a)?.net_sales || 0));
-  const rows = labels.map((label) => ({
+  const makeRow = (label, c, p, locOf) => ({
     label,
-    net: cur.get(label)?.net_sales ?? 0,
-    share: div(cur.get(label)?.net_sales ?? 0, curTotal),
-    netCmp: cmp.get(label)?.net_sales ?? null,
-    shareCmp: hasCmp ? div(cmp.get(label)?.net_sales ?? 0, cmpTotal) : null,
-    orders: cur.get(label)?.orders ?? 0,
-    ...Object.fromEntries(ids.map((id) => [`loc_${id}`, div(byLoc.get(`${id}|${label}`)?.net_sales ?? 0, locTotals.get(id)?.net_sales)])),
-  }));
+    net: c?.net_sales ?? 0,
+    share: div(c?.net_sales ?? 0, curTotal),
+    netCmp: hasCmp ? p?.net_sales ?? 0 : null,
+    shareCmp: hasCmp ? div(p?.net_sales ?? 0, cmpTotal) : null,
+    orders: c?.orders ?? 0,
+    ...Object.fromEntries(ids.map((id) => [`loc_${id}`, div(locOf(id)?.net_sales ?? 0, locTotals.get(id)?.net_sales)])),
+  });
+  const rows = labels.map((label) => {
+    const row = makeRow(label, cur.get(label), cmp.get(label), (id) => byLoc.get(`${id}|${label}`));
+    const sources = [...(sourcesOf.get(label) || [])];
+    // Only groups (several Toast names, or a renamed one) get detail rows.
+    if (sources.length > 1 || (sources.length === 1 && sources[0] !== label)) {
+      row.children = sources.map((src) => {
+        const k = `${label}|${src}`;
+        return makeRow(src, curSrc.get(k), cmpSrc.get(k), (id) => locSrc.get(`${id}|${k}`));
+      });
+    }
+    return row;
+  });
   const dimLabel = { sales_category: 'Sales category', dining_option: 'Dining option', revenue_center: 'Revenue center' }[data.dimension];
   const cols = [
     { key: 'label', label: dimLabel, text: true },
@@ -422,7 +445,7 @@ function renderMix(ctx, data) {
     h('div', { class: 'grid two' },
       card(`Net sales by ${dimLabel.toLowerCase()}`, subtitle(ctx), null, barEl),
       card('Mix by location', `Share of each location's net sales · ${fmtRange(ctx.q.current)}`, null, stackEl)),
-    card(dimLabel, subtitle(ctx), csvButton(() => table), table.el),
+    card(dimLabel, `${subtitle(ctx)}${table.expander ? ' · click a group to see the Toast names in it' : ''}`, [table.expander, csvButton(() => table)], table.el),
   );
   later(() => {
     barChart(barEl, { categories: labels.slice(0, 12), series: barSeries, horizontal: true, format: fmt.money, axisFormat: fmt.moneyShort });
@@ -454,18 +477,43 @@ export async function discounts(ctx) {
     kpi('Avg discount', div(U.amount, U.uses), UC && div(UC.amount, UC.uses), { ...o, format: fmt.money2, better: 'none' }),
   );
 
-  // By discount name
-  const cmpByName = new Map((data.byName.compare || []).map((r) => [r.discount_name, r]));
-  const locByName = new Map((data.byLocation.current || []).map((r) => [`${r.location_id}|${r.discount_name}`, r]));
-  const rows = (data.byName.current || []).map((r) => ({
-    name: r.discount_name,
-    uses: r.uses,
-    amount: r.amount,
-    share: div(r.amount, T.discounts),
-    pctGross: div(r.amount, T.gross_sales),
-    amountCmp: cmpByName.get(r.discount_name)?.amount ?? (hasCmp ? 0 : null),
-    ...Object.fromEntries(ids.map((id) => [`loc_${id}`, locByName.get(`${id}|${r.discount_name}`)?.amount ?? 0])),
-  }));
+  // By discount name. Rows arrive per (group, Toast name); the table shows one
+  // row per group that expands into its Toast names, and charts use groups only.
+  const nf = ['uses', 'amount'];
+  const srcKey = (r) => `${r.discount_name}|${r.source_name ?? r.discount_name}`;
+  const byGroup = sumBy(data.byName.current, 'discount_name', nf);
+  const cmpByName = sumBy(data.byName.compare, 'discount_name', nf);
+  const locByName = sumBy(data.byLocation.current, (r) => `${r.location_id}|${r.discount_name}`, nf);
+  const bySrc = sumBy(data.byName.current, srcKey, nf);
+  const cmpBySrc = sumBy(data.byName.compare, srcKey, nf);
+  const locBySrc = sumBy(data.byLocation.current, (r) => `${r.location_id}|${srcKey(r)}`, nf);
+  const sourcesOf = new Map();
+  for (const r of [...(data.byName.current || []), ...(data.byName.compare || [])]) {
+    if (!sourcesOf.has(r.discount_name)) sourcesOf.set(r.discount_name, new Set());
+    sourcesOf.get(r.discount_name).add(r.source_name ?? r.discount_name);
+  }
+  const discountRow = (name, c, p, locOf) => ({
+    name,
+    uses: c?.uses ?? 0,
+    amount: c?.amount ?? 0,
+    share: div(c?.amount ?? 0, T.discounts),
+    pctGross: div(c?.amount ?? 0, T.gross_sales),
+    amountCmp: hasCmp ? p?.amount ?? 0 : null,
+    ...Object.fromEntries(ids.map((id) => [`loc_${id}`, locOf(id)?.amount ?? 0])),
+  });
+  const rows = [...byGroup.keys()]
+    .map((name) => {
+      const row = discountRow(name, byGroup.get(name), cmpByName.get(name), (id) => locByName.get(`${id}|${name}`));
+      const sources = [...(sourcesOf.get(name) || [])];
+      if (sources.length > 1 || (sources.length === 1 && sources[0] !== name)) {
+        row.children = sources.map((src) => {
+          const k = `${name}|${src}`;
+          return discountRow(src, bySrc.get(k), cmpBySrc.get(k), (id) => locBySrc.get(`${id}|${k}`));
+        });
+      }
+      return row;
+    })
+    .sort((a, b) => b.amount - a.amount);
   const cols = [
     { key: 'name', label: 'Discount', text: true },
     { key: 'uses', label: 'Uses', fmt: fmt.int },
@@ -480,14 +528,23 @@ export async function discounts(ctx) {
   if (ids.length > 1) for (const id of ids) cols.push({ key: `loc_${id}`, label: ctx.loc(id).name, fmt: fmt.money });
   const nameTable = dataTable({ columns: cols, rows, sortKey: 'amount', filename: 'discounts' });
 
-  // By approver (manager comps)
-  const apprRows = (data.byApprover.current || []).map((r) => ({ approver: r.approver, name: r.discount_name, uses: r.uses, amount: r.amount }));
+  // By approver (manager comps): one row per manager, expanding into the
+  // discount groups they approved.
+  const apprRows = [];
+  for (const r of data.byApprover.current || []) {
+    let row = apprRows.find((a) => a.label === r.approver);
+    if (!row) apprRows.push((row = { label: r.approver, uses: 0, amount: 0, children: [] }));
+    row.uses += r.uses;
+    row.amount += r.amount;
+    row.children.push({ label: r.discount_name, uses: r.uses, amount: r.amount });
+  }
+  const apprTotal = apprRows.reduce((a, r) => a + r.amount, 0);
   const apprTable = dataTable({
     columns: [
-      { key: 'approver', label: 'Approved by', text: true },
-      { key: 'name', label: 'Discount', text: true },
+      { key: 'label', label: 'Approved by', text: true },
       { key: 'uses', label: 'Uses', fmt: fmt.int },
       { key: 'amount', label: 'Amount', fmt: fmt.money },
+      { key: 'share', label: 'Share of comps', value: (r) => div(r.amount, apprTotal), fmt: fmt.pct },
     ],
     rows: apprRows,
     sortKey: 'amount',
@@ -528,6 +585,7 @@ export async function discounts(ctx) {
   };
   const apprTools = [
     hasCmp ? seg([['discount', 'By discount'], ['compare', 'vs comparison']], approverState.view, (v) => { approverState.view = v; drawApprovers(); }) : null,
+    apprTable.expander,
     csvButton(() => apprTable),
   ];
 
@@ -551,7 +609,8 @@ export async function discounts(ctx) {
       card('Top discounts', subtitle(ctx), null, barEl),
       card('Discount % of gross by location', subtitle(ctx), null, locEl)),
     card('Discount % trend', `${subtitle(ctx)} · by ${ctx.q.grain}`, null, trendEl),
-    card('All discounts', subtitle(ctx), csvButton(() => nameTable), rows.length ? nameTable.el : h('div', { class: 'empty' }, 'No discounts in this period')),
+    card('All discounts', `${subtitle(ctx)}${nameTable.expander ? ' · click a group to see the Toast discounts in it' : ''}`, [nameTable.expander, csvButton(() => nameTable)],
+      rows.length ? nameTable.el : h('div', { class: 'empty' }, 'No discounts in this period')),
     card('Comps by approver', `Discounts that required a manager approval · ${subtitle(ctx)}${approvers.length === 15 && apprTotals.size > 15 ? ' · top 15 shown' : ''}`, apprTools,
       apprRows.length ? [apprEl, apprTable.el] : h('div', { class: 'empty' }, 'No approved comps in this period')),
   );
