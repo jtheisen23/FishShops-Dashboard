@@ -59,6 +59,10 @@ jobs:
             [ -n "$IN_END" ] && args+=(--end "$IN_END")
           elif [ "$SCHEDULE" = "40 11 * * *" ]; then
             args+=(--days 7)
+          elif [ "$(TZ=America/Los_Angeles date +%H)" -lt 6 ]; then
+            # Overnight runs also finish yesterday: its last orders land after the
+            # final evening sync, and GitHub sometimes skips the nightly recheck.
+            args+=(--days 2)
           else
             args+=(--days 1)
           fi
