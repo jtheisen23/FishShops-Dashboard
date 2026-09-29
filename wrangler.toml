@@ -19,12 +19,19 @@ migrations_dir = "db/migrations"
 
 [vars]
 AUTH_MODE = "access"
+# Repository whose "Toast sync" workflow the cron triggers start. The token
+# (GITHUB_DISPATCH_TOKEN) is a secret set in the Cloudflare dashboard.
+GITHUB_REPO = "jtheisen23/FishShops-Dashboard"
 # Zero Trust team domain that issues the login tokens.
 ACCESS_TEAM_DOMAIN = "thefishshops.cloudflareaccess.com"
 # Application Audience (AUD) tag from Zero Trust > Access > Applications > your app.
 ACCESS_AUD = "c7af2fadd00243e523044e082dca3a453a0bc9fb4ded6da1b5c03a1e42abc638"
 # BOOTSTRAP_ADMINS (comma-separated emails that are always admins) is set as a
 # secret in the Cloudflare dashboard so it isn't published in this repo.
+
+# Starts the Toast sync on GitHub Actions (worker/src/scheduler.js). Times are UTC.
+[triggers]
+crons = ["17 * * * *", "40 11 * * *"]
 
 [observability]
 enabled = true

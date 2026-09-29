@@ -239,18 +239,32 @@ export async function items(env, url, user) {
   return { query: q, limit, ...r };
 }
 
+const laDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit' });
+
 export async function locations(env, user) {
   if (!user.locations.length) return { locations: [] };
+  // "Yesterday" in Pacific time, to report whether it was re-synced after the
+  // day ended (a sync during service leaves the dinner rush missing).
+  const today = laDate.format(new Date());
+  const y = new Date(`${today}T12:00:00Z`);
+  y.setUTCDate(y.getUTCDate() - 1);
+  const yesterday = y.toISOString().slice(0, 10);
   const { results } = await env.DB.prepare(
     `SELECT l.id, l.name, l.timezone,
             (SELECT MAX(business_date) FROM daily_sales d WHERE d.location_id = l.id) AS last_business_date,
             (SELECT MIN(business_date) FROM daily_sales d WHERE d.location_id = l.id) AS first_business_date,
-            (SELECT MAX(synced_at) FROM sync_log s WHERE s.location_id = l.id) AS last_synced_at
+            (SELECT MAX(synced_at) FROM sync_log s WHERE s.location_id = l.id) AS last_synced_at,
+            (SELECT synced_at FROM sync_log s WHERE s.location_id = l.id AND s.business_date = ?) AS yesterday_synced_at
        FROM locations l
       WHERE l.id IN (${user.locations.map(() => '?').join(',')})
       ORDER BY l.sort_order, l.name`,
   )
-    .bind(...user.locations)
+    .bind(yesterday, ...user.locations)
     .all();
+  for (const r of results) {
+    r.yesterday = yesterday;
+    // Complete once synced on a later Pacific date than the day itself.
+    r.yesterday_complete = !!r.yesterday_synced_at && laDate.format(new Date(r.yesterday_synced_at)) > yesterday;
+  }
   return { locations: results };
 }

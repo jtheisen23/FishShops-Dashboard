@@ -4,6 +4,7 @@
 import { authenticate, HttpError } from './auth.js';
 import * as api from './api.js';
 import * as admin from './admin.js';
+import { dispatchSync } from './scheduler.js';
 
 const JSON_HEADERS = {
   'Content-Type': 'application/json; charset=utf-8',
@@ -77,5 +78,10 @@ export default {
       console.error(err);
       return json({ error: 'Internal error' }, 500);
     }
+  },
+
+  // Cron triggers from wrangler.toml: start the Toast sync on GitHub Actions.
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(dispatchSync(env, { cron: event.cron, scheduledTime: event.scheduledTime }));
   },
 };

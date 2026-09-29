@@ -130,6 +130,11 @@ You can also run the sync by hand: `node etl/src/index.js --start 2025-01-01 --e
 with the same environment variables set. Add `--out file.sql` to write SQL to a file instead of
 sending it to D1.
 
+**Reliable scheduling:** GitHub's free scheduler often skips runs, so the Worker's cron triggers
+(`[triggers]` in `wrangler.toml`) start the sync instead: hourly at :17, plus 4:40am Pacific for
+the 7-day recheck. They need a Worker **secret** `GITHUB_DISPATCH_TOKEN`: a fine-grained GitHub
+token limited to this repository with **Actions: Read and write** permission.
+
 > GitHub pauses scheduled workflows after 60 days with no activity in the repo. If that happens,
 > re-enable the workflow from the Actions tab.
 

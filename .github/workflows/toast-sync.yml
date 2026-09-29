@@ -1,13 +1,18 @@
 name: Toast sync
 
+# The hourly and nightly syncs are started by the Cloudflare Worker's cron
+# triggers (worker/src/scheduler.js), which fire on time; GitHub's own
+# scheduler skipped most hourly runs. GitHub's schedules stay as a fallback
+# until the Worker's GITHUB_DISPATCH_TOKEN is confirmed working.
 on:
   schedule:
-    # Hourly at an off-peak minute: GitHub often delays or skips scheduled runs
-    # (especially near :00), so hourly still refreshes today every 1-2 hours.
-    - cron: '17 * * * *'  # refresh today (the nightly run below finalizes past days)
-    - cron: '40 11 * * *'   # daily ~4:40am Pacific: re-sync the last 7 days to pick up late edits, tip adjustments and payroll fixes
+    - cron: '17 * * * *'    # fallback: refresh today (and yesterday overnight)
+    - cron: '40 11 * * *'   # backup: ~4:40am Pacific, re-sync the last 7 days
   workflow_dispatch:
     inputs:
+      days:
+        description: 'Sync the last N days (used by the Cloudflare scheduler). Ignored when start is set.'
+        required: false
       start:
         description: 'Backfill start date (YYYY-MM-DD). Leave empty for today only.'
         required: false
@@ -18,10 +23,10 @@ on:
         description: 'Comma-separated location ids (e.g. PL,PB). Empty = all.'
         required: false
 
-# Scheduled runs queue behind each other; each manual backfill (start date +
-# locations) gets its own group so a scheduled run can't displace it.
+# Each kind of run (start date + locations + days) gets its own queue, so an
+# hourly run can't displace a queued nightly or backfill run.
 concurrency:
-  group: toast-sync-${{ github.event_name == 'workflow_dispatch' && format('{0}-{1}', inputs.start, inputs.locations) || 'scheduled' }}
+  group: toast-sync-${{ github.event_name == 'workflow_dispatch' && format('{0}-{1}-{2}', inputs.start, inputs.locations, inputs.days) || 'scheduled' }}
   cancel-in-progress: false
 
 permissions:
@@ -51,12 +56,16 @@ jobs:
           IN_START: ${{ inputs.start }}
           IN_END: ${{ inputs.end }}
           IN_LOCATIONS: ${{ inputs.locations }}
+          IN_DAYS: ${{ inputs.days }}
           SCHEDULE: ${{ github.event.schedule }}
         run: |
           args=()
           if [ -n "$IN_START" ]; then
             args+=(--start "$IN_START")
             [ -n "$IN_END" ] && args+=(--end "$IN_END")
+          elif [ -n "$IN_DAYS" ]; then
+            [[ "$IN_DAYS" =~ ^[0-9]{1,2}$ ]] || { echo "days must be a number"; exit 1; }
+            args+=(--days "$IN_DAYS")
           elif [ "$SCHEDULE" = "40 11 * * *" ]; then
             args+=(--days 7)
           elif [ "$(TZ=America/Los_Angeles date +%H)" -lt 6 ]; then
