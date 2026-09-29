@@ -300,7 +300,18 @@ async function boot() {
   $('user-badge').replaceChildren(h('b', {}, user.name || user.email), ` · ${user.isAdmin ? 'Admin' : 'Viewer'}`);
   const lastSync = allLocations.map((l) => l.last_synced_at).filter(Boolean).sort().pop();
   const lastDate = allLocations.map((l) => l.last_business_date).filter(Boolean).sort().pop();
-  if (lastDate) $('freshness').textContent = `Data through ${fmtDateLong(lastDate)}${lastSync ? ` · synced ${new Date(lastSync).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}` : ''}`;
+  const when = (iso) => new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  if (lastDate) {
+    // Yesterday is only final once re-synced after the day ended; until then
+    // late orders (the dinner rush) may be missing.
+    const withYesterday = allLocations.filter((l) => l.yesterday_synced_at);
+    const yesterdayNote = !withYesterday.length
+      ? ''
+      : withYesterday.every((l) => l.yesterday_complete)
+        ? ' · yesterday final ✓'
+        : ` · yesterday not final yet (updated ${when(withYesterday.map((l) => l.yesterday_synced_at).sort()[0])})`;
+    $('freshness').textContent = `Data through ${fmtDateLong(lastDate)}${lastSync ? ` · synced ${when(lastSync)}` : ''}${yesterdayNote}`;
+  }
 
   if (!allLocations.length && !user.isAdmin) {
     document.querySelector('.filters').hidden = true;
