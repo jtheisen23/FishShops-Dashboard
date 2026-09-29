@@ -2,11 +2,10 @@ name: Toast sync
 
 # The hourly and nightly syncs are started by the Cloudflare Worker's cron
 # triggers (worker/src/scheduler.js), which fire on time; GitHub's own
-# scheduler skipped most hourly runs. GitHub's schedules stay as a fallback
-# until the Worker's GITHUB_DISPATCH_TOKEN is confirmed working.
+# scheduler skipped most hourly runs. Only the nightly 7-day re-sync is kept
+# here as a backup in case a Cloudflare dispatch fails.
 on:
   schedule:
-    - cron: '17 * * * *'    # fallback: refresh today (and yesterday overnight)
     - cron: '40 11 * * *'   # backup: ~4:40am Pacific, re-sync the last 7 days
   workflow_dispatch:
     inputs:

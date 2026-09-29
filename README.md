@@ -118,7 +118,7 @@ secrets are set, run *Actions → Toast connection check*. It signs in and reads
 location, then reports net sales, labor and any missing Toast permissions in the run summary. It
 writes nothing and doesn't need the Cloudflare secrets.
 
-`.github/workflows/toast-sync.yml` refreshes today hourly (GitHub sometimes skips scheduled runs, so expect updates every 1–2 hours). Each morning it
+`.github/workflows/toast-sync.yml` refreshes today hourly, started by the Worker's cron trigger (see *Reliable scheduling* below). Each morning it
 also re-syncs the last 7 days, so late edits and tip adjustments are picked up. **History** is
 loaded by `.github/workflows/toast-backfill.yml`. Every night it works backwards from the
 earliest loaded day toward its `from` date (default 2025-01-01), and stops after 60,000 D1 rows
@@ -133,7 +133,8 @@ sending it to D1.
 **Reliable scheduling:** GitHub's free scheduler often skips runs, so the Worker's cron triggers
 (`[triggers]` in `wrangler.toml`) start the sync instead: hourly at :17, plus 4:40am Pacific for
 the 7-day recheck. They need a Worker **secret** `GITHUB_DISPATCH_TOKEN`: a fine-grained GitHub
-token limited to this repository with **Actions: Read and write** permission.
+token limited to this repository with **Actions: Read and write** permission. GitHub's own
+schedule keeps only the 4:40am 7-day re-sync as a backup.
 
 > GitHub pauses scheduled workflows after 60 days with no activity in the repo. If that happens,
 > re-enable the workflow from the Actions tab.
