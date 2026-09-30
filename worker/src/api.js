@@ -50,6 +50,12 @@ async function bothPeriods(env, q, sql, extraBinds = []) {
 
 const RANGE = 'business_date BETWEEN ? AND ? AND location_id IN ({LOCATIONS})';
 
+// Toast jobs left out of every labor figure (hours, cost, labor %, SPLH).
+// Matched case-insensitively. The rows stay in D1, so removing a name here
+// brings them back for all dates.
+export const EXCLUDED_JOBS = ['register'];
+const LABOR_RANGE = `${RANGE} AND LOWER(TRIM(job_title)) NOT IN (${EXCLUDED_JOBS.map((j) => `'${j}'`).join(', ')})`;
+
 function stripDiscounts(rows) {
   return rows?.map(({ gross_sales, discounts, voids, void_count, ...rest }) => rest) ?? null;
 }
@@ -85,14 +91,14 @@ export async function overview(env, url, user) {
         q,
         `SELECT location_id, SUM(regular_hours + overtime_hours) AS hours, SUM(overtime_hours) AS overtime_hours,
                 SUM(regular_cost + overtime_cost) AS cost
-           FROM labor_daily WHERE ${RANGE} GROUP BY location_id`,
+           FROM labor_daily WHERE ${LABOR_RANGE} GROUP BY location_id`,
       ),
       bothPeriods(
         env,
         q,
         `SELECT business_date, location_id, SUM(regular_hours + overtime_hours) AS hours,
                 SUM(regular_cost + overtime_cost) AS cost
-           FROM labor_daily WHERE ${RANGE} GROUP BY business_date, location_id ORDER BY business_date`,
+           FROM labor_daily WHERE ${LABOR_RANGE} GROUP BY business_date, location_id ORDER BY business_date`,
       ),
     ]);
   }
@@ -194,21 +200,21 @@ export async function labor(env, url, user) {
       q,
       `SELECT job_title, SUM(regular_hours) AS regular_hours, SUM(overtime_hours) AS overtime_hours,
               SUM(regular_cost) AS regular_cost, SUM(overtime_cost) AS overtime_cost, SUM(shifts) AS shifts
-         FROM labor_daily WHERE ${RANGE} GROUP BY job_title ORDER BY SUM(regular_cost + overtime_cost) DESC`,
+         FROM labor_daily WHERE ${LABOR_RANGE} GROUP BY job_title ORDER BY SUM(regular_cost + overtime_cost) DESC`,
     ),
     bothPeriods(
       env,
       q,
       `SELECT location_id, job_title, SUM(regular_hours + overtime_hours) AS hours, SUM(overtime_hours) AS overtime_hours,
               SUM(regular_cost + overtime_cost) AS cost
-         FROM labor_daily WHERE ${RANGE} GROUP BY location_id, job_title`,
+         FROM labor_daily WHERE ${LABOR_RANGE} GROUP BY location_id, job_title`,
     ),
     bothPeriods(
       env,
       q,
       `SELECT business_date, location_id, SUM(regular_hours + overtime_hours) AS hours,
               SUM(overtime_hours) AS overtime_hours, SUM(regular_cost + overtime_cost) AS cost
-         FROM labor_daily WHERE ${RANGE} GROUP BY business_date, location_id ORDER BY business_date`,
+         FROM labor_daily WHERE ${LABOR_RANGE} GROUP BY business_date, location_id ORDER BY business_date`,
     ),
     bothPeriods(
       env,
