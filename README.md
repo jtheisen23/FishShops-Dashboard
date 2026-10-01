@@ -144,7 +144,7 @@ connection check* to confirm the token and how 7shifts locations match the dashb
 matched; add `"sevenShiftsId": <id>` to a location in `LOCATIONS_JSON` to pin one). File Toast jobs
 under 7shifts roles in *Admin → Category groups → Labor jobs*; the Labor and 7shifts tabs then group
 jobs by role (each role expands to its jobs). The tab also has a **Log book** section with every
-7shifts log book entry (all locations, visible to every user), filterable by location, category and
+7shifts log book entry for the user's assigned locations, filterable by location, category and
 text. Each sync refreshes recent days; run *Toast sync* with *logbook_all* ticked to reload all history.
 
 > GitHub pauses scheduled workflows after 60 days with no activity in the repo. If that happens,

@@ -340,19 +340,15 @@ export async function sevenShifts(env, url, user) {
 
 const LOG_BOOK_LIMIT = 3000;
 
-/**
- * 7shifts log book entries for a date range. Every signed-in user can read
- * the log book for every location (an owner decision), so this checks
- * locations against the locations table rather than the user's rights.
- */
-export async function logBook(env, url) {
-  const p = url.searchParams;
-  const period = readPeriod(p, 'start', 'end', true);
-  const { results: all } = await env.DB.prepare('SELECT id, name FROM locations WHERE active = 1 ORDER BY sort_order, name').all();
-  const known = new Set(all.map((l) => l.id));
-  const requested = (p.get('locations') || '').split(',').map((s) => s.trim()).filter((s) => known.has(s));
-  const locs = requested.length ? requested : [...known];
-  if (!locs.length) return { locations: all, posts: [], truncated: false };
+/** 7shifts log book entries for a date range, for the user's assigned locations. */
+export async function logBook(env, url, user) {
+  const q = readQuery(url, user);
+  const { results: all } = await env.DB.prepare(
+    `SELECT id, name FROM locations WHERE id IN (${user.locations.map(() => '?').join(',')}) ORDER BY sort_order, name`,
+  )
+    .bind(...user.locations)
+    .all();
+  const locs = q.locations;
   const { results } = await env.DB.prepare(
     `SELECT id, location_id, business_date, category, author, message, comments, attachment_count, created
        FROM log_book_posts
@@ -360,7 +356,7 @@ export async function logBook(env, url) {
       ORDER BY business_date DESC, location_id, category
       LIMIT ${LOG_BOOK_LIMIT + 1}`,
   )
-    .bind(period.start, period.end, ...locs)
+    .bind(q.current.start, q.current.end, ...locs)
     .all();
   const truncated = results.length > LOG_BOOK_LIMIT;
   const posts = results.slice(0, LOG_BOOK_LIMIT).map((r) => {

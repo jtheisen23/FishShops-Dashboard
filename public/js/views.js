@@ -1057,7 +1057,7 @@ export async function sevenShifts(ctx) {
 }
 
 // ---------------------------------------------------------------------------
-// 7shifts log book (every user, every location)
+// 7shifts log book (each user's assigned locations)
 // ---------------------------------------------------------------------------
 const logState = { locs: null, category: '', search: '', shown: 100 };
 
@@ -1069,7 +1069,7 @@ async function logBookCard(ctx) {
   logState.locs ??= data.locations.map((l) => l.id);
 
   const chipRow = h('div', { class: 'chips' });
-  const drawChips = () => chipRow.replaceChildren(...data.locations.map((l, i) => {
+  const drawChips = () => chipRow.replaceChildren(...data.locations.map((l) => {
     const on = logState.locs.includes(l.id);
     return h('button', {
       type: 'button',
@@ -1084,7 +1084,7 @@ async function logBookCard(ctx) {
         status.textContent = '';
         draw();
       },
-    }, h('span', { class: 'dot', style: { '--dot': `var(--s${(i % 8) + 1})` } }), l.name);
+    }, h('span', { class: 'dot', style: { '--dot': `var(--s${(ctx.loc(l.id).colorIndex % 8) + 1})` } }), l.name);
   }));
 
   const catSelect = h('select', { 'aria-label': 'Category', onchange: () => { logState.category = catSelect.value; logState.shown = 100; draw(); } });
@@ -1128,6 +1128,6 @@ async function logBookCard(ctx) {
   }
   drawChips();
   draw();
-  return card('Log book', `${fmtRange(ctx.q.current)} · from 7shifts · all locations`, [catSelect, search, status],
+  return card('Log book', `${fmtRange(ctx.q.current)} · from 7shifts`, [catSelect, search, status],
     h('div', { style: { margin: '0 0 12px' } }, chipRow), body);
 }
