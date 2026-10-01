@@ -1061,6 +1061,15 @@ export async function sevenShifts(ctx) {
 // ---------------------------------------------------------------------------
 const logState = { locs: null, category: '', search: '', shown: 100 };
 
+/** Thumbnails for images, links for other files; both open the file in a new tab. */
+function attachmentsRow(p) {
+  return h('div', { class: 'log-files' }, p.attachments.map((a) => {
+    const href = `/api/logbook/file?post=${encodeURIComponent(p.id)}&i=${a.i}`;
+    return h('a', { href, target: '_blank', rel: 'noopener', title: a.name, class: a.image ? 'log-thumb' : 'log-file' },
+      a.image ? h('img', { src: href, alt: a.name, loading: 'lazy' }) : `📎 ${a.name}`);
+  }));
+}
+
 async function logBookCard(ctx) {
   const body = h('div');
   const status = h('span', { class: 'muted small' });
@@ -1117,8 +1126,9 @@ async function logBookCard(ctx) {
           h('div', { class: 'log-meta' },
             h('span', { class: 'pill on' }, p.category),
             p.author ? h('span', { class: 'muted small' }, p.author) : null,
-            p.attachment_count ? h('span', { class: 'muted small' }, `📎 ${p.attachment_count}`) : null),
+            p.attachment_count && !p.attachments?.length ? h('span', { class: 'muted small' }, `📎 ${p.attachment_count}`) : null),
           para(p.message),
+          p.attachments?.length ? attachmentsRow(p) : null,
           ...p.comments.map((c) => h('div', { class: 'log-comment' }, h('span', { class: 'muted small' }, `${c.author || 'Comment'}: `), c.message)))))),
       posts.length > shown.length
         ? h('button', { class: 'btn', type: 'button', style: { marginTop: '8px' }, onclick: () => { logState.shown += 200; draw(); } }, `Show more (${posts.length - shown.length} left)`)

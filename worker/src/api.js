@@ -350,7 +350,7 @@ export async function logBook(env, url, user) {
     .all();
   const locs = q.locations;
   const { results } = await env.DB.prepare(
-    `SELECT id, location_id, business_date, category, author, message, comments, attachment_count, created
+    `SELECT id, location_id, business_date, category, author, message, comments, attachment_count, attachments, created
        FROM log_book_posts
       WHERE business_date BETWEEN ? AND ? AND location_id IN (${locs.map(() => '?').join(',')})
       ORDER BY business_date DESC, location_id, category
@@ -361,8 +361,50 @@ export async function logBook(env, url, user) {
   const truncated = results.length > LOG_BOOK_LIMIT;
   const posts = results.slice(0, LOG_BOOK_LIMIT).map((r) => {
     let comments = [];
+    let files = [];
     try { comments = JSON.parse(r.comments || '[]'); } catch { /* keep empty */ }
-    return { ...r, comments };
+    try { files = JSON.parse(r.attachments || '[]'); } catch { /* keep empty */ }
+    // File paths stay server-side; the page asks for /api/logbook/file?post=&i=.
+    return { ...r, comments, attachments: files.map((f, i) => ({ i, name: f.name, image: IMAGE_EXT.test(f.name) })) };
   });
   return { locations: all, posts, truncated };
+}
+
+const IMAGE_EXT = /\.(jpe?g|png|gif|webp)$/i;
+const SAFE_INLINE = /^(image\/(jpeg|png|gif|webp)|application\/pdf)$/;
+const FILE_HOST = 'files.7shifts.com';
+
+/**
+ * Streams one log book attachment from 7shifts, adding the 7shifts token
+ * (Worker secret SEVENSHIFTS_ACCESS_TOKEN). Only for users assigned to the
+ * post's location. Images and PDFs open inline; anything else downloads.
+ */
+export async function logBookFile(env, url, user) {
+  const postId = Number(url.searchParams.get('post'));
+  const index = Number(url.searchParams.get('i'));
+  if (!Number.isInteger(postId) || !Number.isInteger(index) || index < 0) throw new HttpError(400, 'Bad attachment');
+  const row = await env.DB.prepare('SELECT location_id, attachments FROM log_book_posts WHERE id = ?').bind(postId).first();
+  if (!row || !user.locations.includes(row.location_id)) throw new HttpError(404, 'Not found');
+  let files = [];
+  try { files = JSON.parse(row.attachments || '[]'); } catch { /* none */ }
+  const file = files[index];
+  if (!file) throw new HttpError(404, 'Not found');
+  const target = new URL(file.path);
+  if (target.protocol !== 'https:' || target.host !== FILE_HOST) throw new HttpError(404, 'Not found');
+  if (!env.SEVENSHIFTS_ACCESS_TOKEN) throw new HttpError(503, 'Attachments need the SEVENSHIFTS_ACCESS_TOKEN Worker secret');
+
+  const upstream = await fetch(target, { headers: { Authorization: `Bearer ${env.SEVENSHIFTS_ACCESS_TOKEN}` } });
+  if (!upstream.ok) throw new HttpError(upstream.status === 404 ? 404 : 502, `7shifts returned ${upstream.status} for this file`);
+  const type = (upstream.headers.get('content-type') || 'application/octet-stream').split(';')[0].trim().toLowerCase();
+  const inline = SAFE_INLINE.test(type);
+  const name = String(file.name || 'attachment').replace(/["\\\r\n]/g, '_');
+  return new Response(upstream.body, {
+    headers: {
+      'Content-Type': inline ? type : 'application/octet-stream',
+      'Content-Disposition': `${inline ? 'inline' : 'attachment'}; filename="${name}"`,
+      'Cache-Control': 'private, max-age=3600',
+      'X-Content-Type-Options': 'nosniff',
+      'Content-Security-Policy': "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; sandbox",
+    },
+  });
 }

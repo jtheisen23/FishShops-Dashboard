@@ -146,6 +146,8 @@ under 7shifts roles in *Admin → Category groups → Labor jobs*; the Labor and
 jobs by role (each role expands to its jobs). The tab also has a **Log book** section with every
 7shifts log book entry for the user's assigned locations, filterable by location, category and
 text. Each sync refreshes recent days; run *Toast sync* with *logbook_all* ticked to reload all history.
+Attachments open through the Worker, which needs the same token as a Worker **secret**
+`SEVENSHIFTS_ACCESS_TOKEN` (Workers & Pages → fishshops-dashboard → Settings → Variables and Secrets).
 
 > GitHub pauses scheduled workflows after 60 days with no activity in the repo. If that happens,
 > re-enable the workflow from the Actions tab.

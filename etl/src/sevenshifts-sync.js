@@ -156,6 +156,11 @@ async function logBook(client, companyId, remote, range, names) {
     message: String(p.message ?? '').slice(0, 20000),
     comments: JSON.stringify(comments.get(p.id) || []),
     attachment_count: Array.isArray(p.attachments) ? p.attachments.length : 0,
+    attachments: JSON.stringify(
+      (Array.isArray(p.attachments) ? p.attachments : [])
+        .filter((a) => a?.full_path)
+        .map((a) => ({ name: String(a.file_name || 'attachment').slice(0, 200), path: String(a.full_path) })),
+    ),
     created: p.created ?? null,
   }));
 }
@@ -166,7 +171,7 @@ function logBookStatements(locationId, range, posts) {
       ? `DELETE FROM log_book_posts WHERE location_id=${lit(locationId)} AND business_date BETWEEN ${lit(range.start)} AND ${lit(range.end)};`
       : `DELETE FROM log_book_posts WHERE location_id=${lit(locationId)};`,
   ];
-  const cols = ['id', 'location_id', 'business_date', 'category', 'author', 'message', 'comments', 'attachment_count', 'created'];
+  const cols = ['id', 'location_id', 'business_date', 'category', 'author', 'message', 'comments', 'attachment_count', 'attachments', 'created'];
   // Notes can be long, so batch by size rather than count (D1 statements max out at 100 KB).
   let batch = [];
   let size = 0;
