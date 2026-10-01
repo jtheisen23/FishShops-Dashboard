@@ -13,6 +13,7 @@ const TABS = [
   { id: 'discounts', label: 'Discounts & comps', section: 'discounts', render: views.discounts },
   { id: 'labor', label: 'Labor', section: 'labor', render: views.labor },
   { id: 'items', label: 'Menu items', section: 'items', render: views.items },
+  { id: 'sevenshifts', label: '7shifts', admin: true, render: views.sevenShifts },
   { id: 'admin', label: 'Admin', admin: true, render: adminView },
 ];
 
@@ -247,7 +248,7 @@ async function render() {
     const node = await tab.render(ctx);
     if (seq !== renderSeq) return; // a newer render started
     disposeCharts();
-    const warning = tab.admin ? null : historyWarning(periods);
+    const warning = tab.id === 'admin' ? null : historyWarning(periods);
     view.replaceChildren(...(warning ? [warning] : []), node);
   } catch (err) {
     if (seq !== renderSeq) return;
