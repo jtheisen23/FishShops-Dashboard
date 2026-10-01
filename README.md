@@ -136,7 +136,7 @@ the 7-day recheck. They need a Worker **secret** `GITHUB_DISPATCH_TOKEN`: a fine
 token limited to this repository with **Actions: Read and write** permission. GitHub's own
 schedule keeps only the 4:40am 7-day re-sync as a backup.
 
-**7shifts (admins only):** the *7shifts* tab compares scheduled labor from 7shifts with actual
+**7shifts:** the *7shifts* tab (every user, for their own locations; Toast labor and sales figures follow the Labor and Sales permissions) compares scheduled labor from 7shifts with actual
 labor from Toast and shows the next 14 days of schedule. Add a GitHub secret
 `SEVENSHIFTS_ACCESS_TOKEN` (7shifts → Settings → Developer tools → Access tokens); each Toast sync
 then also loads published shifts for the last few days and the next 14. Run *Actions → 7shifts

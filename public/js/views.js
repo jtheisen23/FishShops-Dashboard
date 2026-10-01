@@ -849,7 +849,8 @@ function renderItems(ctx, data) {
 }
 
 // ---------------------------------------------------------------------------
-// 7shifts (admins only): scheduled vs actual labor, upcoming schedule
+// 7shifts (every user): scheduled vs actual labor, upcoming schedule.
+// Toast labor needs labor access and sales figures sales access.
 // ---------------------------------------------------------------------------
 const shiftsState = { metric: 'hours' };
 
@@ -857,25 +858,26 @@ export async function sevenShifts(ctx) {
   const data = await ctx.api('/api/sevenshifts');
   const ids = ctx.q.locations;
   const sf = ['hours', 'cost', 'shifts', 'open_shifts', 'open_hours'];
+  const hasActual = !!data.actual;
+  const hasSales = !!data.sales;
   const S = totals(data.scheduled, sf);
-  const A = totals(data.actual, ['hours', 'cost']);
-  const N = totals(data.sales, ['net_sales']);
+  const A = hasActual ? totals(data.actual, ['hours', 'cost']) : null;
+  const N = hasSales ? totals(data.sales, ['net_sales']) : null;
   const variance = (a, s) => (a !== null && s !== null ? a - s : null);
 
   if (!data.sync.length) {
-    return h('div', { class: 'notice' },
-      'No 7shifts data yet. Add the SEVENSHIFTS_ACCESS_TOKEN secret in GitHub; the next hourly sync loads the schedule from 7shifts.');
+    return h('div', { class: 'notice' }, 'No 7shifts schedule has been loaded for these locations yet.');
   }
 
   const tiles = [
     kpi('Scheduled hours', S.hours, null, { format: fmt.int }),
-    kpi('Actual hours (Toast)', A.hours, null, { format: fmt.int }),
-    kpi('Hours over schedule', variance(A.hours, S.hours), null, { format: (v) => (v === null ? '—' : `${v > 0 ? '+' : ''}${fmt.int(v)}`) }),
+    hasActual && kpi('Actual hours (Toast)', A.hours, null, { format: fmt.int }),
+    hasActual && kpi('Hours over schedule', variance(A.hours, S.hours), null, { format: (v) => (v === null ? '—' : `${v > 0 ? '+' : ''}${fmt.int(v)}`) }),
     kpi('Scheduled labor $', S.cost, null, { format: fmt.money }),
-    kpi('Actual labor $', A.cost, null, { format: fmt.money }),
-    kpi('Scheduled labor %', div(S.cost, N.net_sales), null, { format: fmt.pct }),
-    kpi('Actual labor %', div(A.cost, N.net_sales), null, { format: fmt.pct }),
-  ];
+    hasActual && kpi('Actual labor $', A.cost, null, { format: fmt.money }),
+    hasSales && kpi('Scheduled labor %', div(S.cost, N.net_sales), null, { format: fmt.pct }),
+    hasSales && hasActual && kpi('Actual labor %', div(A.cost, N.net_sales), null, { format: fmt.pct }),
+  ].filter(Boolean);
 
   // Daily scheduled vs actual
   const days = eachDate(ctx.q.current.start, ctx.q.current.end);
@@ -889,13 +891,13 @@ export async function sevenShifts(ctx) {
     window.echarts.getInstanceByDom(dailyEl)?.dispose();
     const f = shiftsState.metric;
     const sm = sumDay(data.scheduled, f);
-    const am = sumDay(data.actual, f);
+    const am = hasActual ? sumDay(data.actual, f) : null;
     const money = f === 'cost';
     barChart(dailyEl, {
       categories: days.map((d) => `${fmtWeekday(d)} ${fmtDate(d)}`),
       series: [
         { name: 'Scheduled (7shifts)', color: 'compare', data: days.map((d) => sm.get(d) ?? null) },
-        { name: 'Actual (Toast)', colorIndex: 0, data: days.map((d) => am.get(d) ?? null) },
+        ...(am ? [{ name: 'Actual (Toast)', colorIndex: 0, data: days.map((d) => am.get(d) ?? null) }] : []),
       ],
       format: money ? fmt.money : fmt.dec1,
       axisFormat: money ? fmt.moneyShort : fmt.int,
@@ -905,8 +907,8 @@ export async function sevenShifts(ctx) {
 
   // By location
   const sl = sumBy(data.scheduled, 'location_id', sf);
-  const al = sumBy(data.actual, 'location_id', ['hours', 'cost']);
-  const nl = sumBy(data.sales, 'location_id', ['net_sales']);
+  const al = hasActual ? sumBy(data.actual, 'location_id', ['hours', 'cost']) : new Map();
+  const nl = hasSales ? sumBy(data.sales, 'location_id', ['net_sales']) : new Map();
   const locRow = (id, s, a, n) => ({
     id,
     sHours: s?.hours ?? 0,
@@ -926,21 +928,21 @@ export async function sevenShifts(ctx) {
   const locCols = [
     { key: 'id', label: 'Location', text: true, value: (r) => (r.id ? ctx.loc(r.id).name : 'All selected'), render: (r) => (r.id ? locCell(ctx, r.id) : 'All selected') },
     { key: 'sHours', label: 'Sched hrs', fmt: fmt.int },
-    { key: 'aHours', label: 'Actual hrs', fmt: fmt.int },
-    { key: 'vHours', label: 'Hrs over', render: (r) => overCls(r.vHours) },
-    { key: 'vPct', label: '% over', fmt: (v) => (v === null ? '—' : fmt.signedPct(v)) },
+    hasActual && { key: 'aHours', label: 'Actual hrs', fmt: fmt.int },
+    hasActual && { key: 'vHours', label: 'Hrs over', render: (r) => overCls(r.vHours) },
+    hasActual && { key: 'vPct', label: '% over', fmt: (v) => (v === null ? '—' : fmt.signedPct(v)) },
     { key: 'sCost', label: 'Sched $', fmt: fmt.money },
-    { key: 'aCost', label: 'Actual $', fmt: fmt.money },
-    { key: 'vCost', label: '$ over', fmt: signed(fmt.money) },
-    { key: 'sPct', label: 'Sched labor %', fmt: fmt.pct },
-    { key: 'aPct', label: 'Actual labor %', fmt: fmt.pct },
+    hasActual && { key: 'aCost', label: 'Actual $', fmt: fmt.money },
+    hasActual && { key: 'vCost', label: '$ over', fmt: signed(fmt.money) },
+    hasSales && { key: 'sPct', label: 'Sched labor %', fmt: fmt.pct },
+    hasSales && hasActual && { key: 'aPct', label: 'Actual labor %', fmt: fmt.pct },
     { key: 'open', label: 'Open shifts', fmt: fmt.int },
-  ];
+  ].filter(Boolean);
   const locTable = dataTable({
     columns: locCols,
     rows: locRows,
     total: locRows.length > 1 ? { ...locRow(null, S, A, N), id: null } : null,
-    sortKey: 'aHours',
+    sortKey: hasActual ? 'aHours' : 'sHours',
     filename: 'scheduled-vs-actual-by-location',
   });
 
@@ -949,7 +951,7 @@ export async function sevenShifts(ctx) {
   const key = (n) => String(n || '').trim().toLowerCase();
   const roles = new Map();
   for (const r of data.schedRoles) roles.set(key(r.name), { name: r.name, sHours: r.hours, sCost: r.cost, aHours: null, aCost: null, jobs: [] });
-  for (const j of data.actualJobs) {
+  for (const j of data.actualJobs || []) {
     let e = roles.get(key(j.name));
     if (!e) roles.set(key(j.name), (e = { name: j.name, sHours: null, sCost: null, aHours: null, aCost: null, jobs: [] }));
     e.aHours = (e.aHours ?? 0) + j.hours;
@@ -969,26 +971,26 @@ export async function sevenShifts(ctx) {
     }
     return row;
   });
-  const unmapped = roleRows.filter((r) => r.source === 'Toast only').length;
+  const unmapped = hasActual ? roleRows.filter((r) => r.source === 'Toast only').length : 0;
   const roleTable = dataTable({
     columns: [
       { key: 'name', label: 'Role / job', text: true },
       { key: 'sHours', label: 'Sched hrs', fmt: fmt.int },
-      { key: 'aHours', label: 'Actual hrs', fmt: fmt.int },
-      { key: 'vHours', label: 'Hrs over', render: (r) => (r.vHours === null ? '—' : overCls(r.vHours)) },
+      hasActual && { key: 'aHours', label: 'Actual hrs', fmt: fmt.int },
+      hasActual && { key: 'vHours', label: 'Hrs over', render: (r) => (r.vHours === null ? '—' : overCls(r.vHours)) },
       { key: 'sCost', label: 'Sched $', fmt: fmt.money },
-      { key: 'aCost', label: 'Actual $', fmt: fmt.money },
-      { key: 'source', label: 'In', text: true },
-    ],
+      hasActual && { key: 'aCost', label: 'Actual $', fmt: fmt.money },
+      hasActual && { key: 'source', label: 'In', text: true },
+    ].filter(Boolean),
     rows: roleRows,
-    sortKey: 'aHours',
+    sortKey: hasActual ? 'aHours' : 'sHours',
     filename: 'scheduled-vs-actual-by-role',
   });
 
   // Upcoming two weeks
   const upDays = eachDate(data.today, data.upcomingEnd);
   const upMap = new Map(data.upcoming.map((r) => [`${r.business_date}|${r.location_id}`, r]));
-  const wk = new Map(data.weekdaySales.map((r) => [`${r.location_id}|${r.weekday}`, r.net_sales]));
+  const wk = new Map((data.weekdaySales || []).map((r) => [`${r.location_id}|${r.weekday}`, r.net_sales]));
   const upRows = upDays.map((d) => {
     const wd = toDate(d).getUTCDay();
     const row = { date: d, hours: 0, cost: 0, open: 0, sales: 0, hasSales: false };
@@ -1012,10 +1014,11 @@ export async function sevenShifts(ctx) {
   upCols.push(
     { key: 'hours', label: 'Sched hrs', fmt: fmt.int },
     { key: 'cost', label: 'Sched $', fmt: fmt.money },
-    { key: 'sales', label: 'Projected sales', fmt: fmt.money },
-    { key: 'laborPct', label: 'Projected labor %', fmt: fmt.pct },
+    hasSales && { key: 'sales', label: 'Projected sales', fmt: fmt.money },
+    hasSales && { key: 'laborPct', label: 'Projected labor %', fmt: fmt.pct },
     { key: 'open', label: 'Open shifts', fmt: fmt.int },
   );
+  upCols.splice(0, upCols.length, ...upCols.filter(Boolean));
   const upTot = totals(upRows, ['hours', 'cost', 'open', 'sales']);
   const upTable = dataTable({
     columns: upCols,
@@ -1030,14 +1033,14 @@ export async function sevenShifts(ctx) {
   const synced = data.sync.map((r) => r.synced_at).sort().pop();
   const node = h('div', {},
     h('div', { class: 'notice' },
-      `Scheduled = published 7shifts shifts (open shifts counted separately). Actual = Toast time entries. Register is left out of both. Last 7shifts sync ${new Date(synced).toLocaleString()}.`),
+      `Scheduled = published 7shifts shifts (open shifts counted separately).${hasActual ? ' Actual = Toast time entries. Register is left out of both.' : ''} Last 7shifts sync ${new Date(synced).toLocaleString()}.`),
     h('div', { class: 'grid kpis' }, tiles),
-    card('Scheduled vs actual by day', fmtRange(ctx.q.current), metricSeg, dailyEl),
+    card(hasActual ? 'Scheduled vs actual by day' : 'Scheduled by day', fmtRange(ctx.q.current), metricSeg, dailyEl),
     card('By location', fmtRange(ctx.q.current), csvButton(() => locTable), locTable.el),
-    card('By role', `${fmtRange(ctx.q.current)} · Toast jobs roll up under the 7shifts role they're mapped to`, csvButton(() => roleTable), 
-      unmapped ? h('div', { class: 'notice' }, `${unmapped} Toast job${unmapped === 1 ? ' isn\'t' : 's aren\'t'} mapped to a 7shifts role yet. Map them in Admin → Category groups → Labor jobs.`) : null,
+    card('By role', hasActual ? `${fmtRange(ctx.q.current)} · Toast jobs roll up under the 7shifts role they're mapped to` : fmtRange(ctx.q.current), csvButton(() => roleTable), 
+      unmapped && ctx.user.isAdmin ? h('div', { class: 'notice' }, `${unmapped} Toast job${unmapped === 1 ? ' isn\'t' : 's aren\'t'} mapped to a 7shifts role yet. Map them in Admin → Category groups → Labor jobs.`) : null,
       roleTable.el),
-    card('Upcoming schedule', 'Next 14 days · projected sales = average of the same weekday over the last 4 weeks', csvButton(() => upTable), upEl, upTable.el),
+    card('Upcoming schedule', hasSales ? 'Next 14 days · projected sales = average of the same weekday over the last 4 weeks' : 'Next 14 days', csvButton(() => upTable), upEl, upTable.el),
   );
   later(() => {
     drawDaily();
