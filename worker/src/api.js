@@ -1,7 +1,7 @@
 // Read-only data endpoints. Every query is scoped to the locations the
 // signed-in user is allowed to see, and each section checks its permission.
 
-import { HttpError, requireAdmin, requireSection } from './auth.js';
+import { HttpError, requireSection } from './auth.js';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_RANGE_DAYS = 1100;
@@ -286,12 +286,13 @@ const shiftDate = (s, n) => {
 };
 
 /**
- * Admin-only 7shifts tab: scheduled labor (7shifts) against actual labor and
- * sales (Toast) for the selected period, plus the next 14 days of schedule
- * with a sales projection from the last 4 weeks' same-weekday average.
+ * 7shifts tab (every user, for their own locations): scheduled labor
+ * (7shifts) against actual labor and sales (Toast) for the selected period,
+ * plus the next 14 days of schedule with a sales projection from the last 4
+ * weeks' same-weekday average. Toast labor needs the labor section and sales
+ * figures the sales section, as on the other tabs.
  */
 export async function sevenShifts(env, url, user) {
-  requireAdmin(user);
   const q = readQuery(url, user);
   const today = laDate.format(new Date());
   const upEnd = shiftDate(today, 13);
@@ -327,12 +328,12 @@ export async function sevenShifts(env, url, user) {
     today,
     upcomingEnd: upEnd,
     scheduled,
-    actual,
-    sales,
+    actual: user.sections.labor ? actual : null,
+    sales: user.sections.sales ? sales : null,
     schedRoles,
-    actualJobs,
+    actualJobs: user.sections.labor ? actualJobs : null,
     upcoming,
-    weekdaySales,
+    weekdaySales: user.sections.sales ? weekdaySales : null,
     sync,
   };
 }
