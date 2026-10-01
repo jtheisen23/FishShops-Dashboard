@@ -1059,7 +1059,7 @@ export async function sevenShifts(ctx) {
 // ---------------------------------------------------------------------------
 // 7shifts log book (each user's assigned locations)
 // ---------------------------------------------------------------------------
-const logState = { locs: null, category: '', search: '', shown: 100 };
+const logState = { locs: null, category: '', search: '', files: false, shown: 100 };
 
 /** Thumbnails for images, links for other files; both open the file in a new tab. */
 function attachmentsRow(p) {
@@ -1098,6 +1098,8 @@ async function logBookCard(ctx) {
 
   const catSelect = h('select', { 'aria-label': 'Category', onchange: () => { logState.category = catSelect.value; logState.shown = 100; draw(); } });
   const search = h('input', { type: 'text', placeholder: 'Search notes', value: logState.search, 'aria-label': 'Search log book' });
+  const filesOnly = h('input', { type: 'checkbox', checked: logState.files, onchange: () => { logState.files = filesOnly.checked; logState.shown = 100; draw(); } });
+  const filesLabel = h('label', { class: 'checks small', style: { gap: '6px' } }, filesOnly, 'Has attachments');
   let t;
   search.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => { logState.search = search.value; logState.shown = 100; draw(); }, 200); });
 
@@ -1110,6 +1112,7 @@ async function logBookCard(ctx) {
     const q = logState.search.trim().toLowerCase();
     const posts = data.posts.filter((p) =>
       (!logState.category || p.category === logState.category) &&
+      (!logState.files || p.attachment_count > 0) &&
       (!q || `${p.message} ${p.author} ${p.category} ${p.comments.map((c) => c.message).join(' ')}`.toLowerCase().includes(q)));
     const shown = posts.slice(0, logState.shown);
     const groups = [];
@@ -1138,6 +1141,6 @@ async function logBookCard(ctx) {
   }
   drawChips();
   draw();
-  return card('Log book', `${fmtRange(ctx.q.current)} · from 7shifts`, [catSelect, search, status],
+  return card('Log book', `${fmtRange(ctx.q.current)} · from 7shifts`, [filesLabel, catSelect, search, status],
     h('div', { style: { margin: '0 0 12px' } }, chipRow), body);
 }
