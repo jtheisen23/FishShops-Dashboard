@@ -5,6 +5,7 @@
 //   node etl/src/sevenshifts-sync.js --days 2               # yesterday, today and the next 14 days
 //   node etl/src/sevenshifts-sync.js --start 2026-09-01 --end 2026-09-30
 //   node etl/src/sevenshifts-sync.js --check                # read-only report of what the token can see
+//   node etl/src/sevenshifts-sync.js --logbook-all          # also load every log book entry ever posted
 //   node etl/src/sevenshifts-sync.js --days 7 --out .tmp/7s.sql
 //
 // Environment: SEVENSHIFTS_ACCESS_TOKEN, LOCATIONS_JSON (or config/locations.json),
@@ -26,6 +27,8 @@ const { values: args } = parseArgs({
     ahead: { type: 'string', default: '14' },
     out: { type: 'string' },
     check: { type: 'boolean', default: false },
+    'logbook-all': { type: 'boolean', default: false },
+    'skip-logbook': { type: 'boolean', default: false },
     config: { type: 'string', default: 'config/locations.json' },
   },
 });
@@ -52,6 +55,7 @@ async function main() {
   const company = await client.company();
   const pairs = matchLocations(locations, await client.locations(company.id));
   let failures = 0;
+  let names = null; // user id -> name, loaded once if the log book is synced
 
   for (const { loc, remote } of pairs) {
     if (!remote) {
@@ -70,6 +74,18 @@ async function main() {
     } catch (err) {
       failures++;
       log(`${loc.id}: FAILED - ${err.message}`);
+    }
+    if (args['skip-logbook']) continue;
+    try {
+      names ??= await client.userNames(company.id);
+      const today = todayIn(tz);
+      const lbEnd = end < today ? end : today; // no entries for future days
+      const posts = await logBook(client, company.id, remote, args['logbook-all'] ? null : { start, end: lbEnd }, names);
+      await sink.write(logBookStatements(loc.id, args['logbook-all'] ? null : { start, end: lbEnd }, posts));
+      log(`${loc.id} log book: ${posts.length} entries${args['logbook-all'] ? ' (all history)' : ` ${start} .. ${lbEnd}`}`);
+    } catch (err) {
+      failures++;
+      log(`${loc.id} log book: FAILED - ${err.message}`);
     }
   }
   await sink.close();
@@ -103,6 +119,70 @@ async function syncLocation(client, companyId, remote, tz, start, end) {
     return (list.find((w) => w.role_id === s.role_id) || list[0])?.wage_cents ?? 0;
   };
   return aggregateShifts(shifts, { timeZone: tz, roles, wageFor, excludedRoles: EXCLUDED_ROLES });
+}
+
+/** Log book posts with category names, author names and comments attached. */
+async function logBook(client, companyId, remote, range, names) {
+  const cats = new Map((await client.logBookCategories(companyId, remote.id)).map((c) => [c.id, c.name]));
+  let posts = [];
+  if (range) {
+    for (let d = range.start; d <= range.end; d = addDays(d, 1)) posts.push(...(await client.logBookPosts(companyId, remote.id, d)));
+  } else {
+    posts = await client.allLogBookPosts(companyId, remote.id);
+  }
+  const comments = new Map();
+  const withComments = posts.filter((p) => p.log_book_comment_count > 0).map((p) => p.id);
+  for (let i = 0; i < withComments.length; i += 50) {
+    try {
+      for (const c of await client.logBookComments(companyId, withComments.slice(i, i + 50))) {
+        const postId = c.log_book_id ?? c.log_book_post_id ?? c.post_id;
+        if (!comments.has(postId)) comments.set(postId, []);
+        comments.get(postId).push({
+          author: names.get(c.user_id) || '',
+          message: String(c.message ?? c.comment ?? c.body ?? ''),
+          created: c.created ?? null,
+        });
+      }
+    } catch (err) {
+      log(`  log book comments unavailable (${err.status ?? err.message}); posts are kept without them`);
+      break;
+    }
+  }
+  return posts.map((p) => ({
+    id: p.id,
+    business_date: p.date,
+    category: cats.get(p.log_book_category_id) || 'Other',
+    author: names.get(p.user_id) || '',
+    message: String(p.message ?? '').slice(0, 20000),
+    comments: JSON.stringify(comments.get(p.id) || []),
+    attachment_count: Array.isArray(p.attachments) ? p.attachments.length : 0,
+    created: p.created ?? null,
+  }));
+}
+
+function logBookStatements(locationId, range, posts) {
+  const stmts = [
+    range
+      ? `DELETE FROM log_book_posts WHERE location_id=${lit(locationId)} AND business_date BETWEEN ${lit(range.start)} AND ${lit(range.end)};`
+      : `DELETE FROM log_book_posts WHERE location_id=${lit(locationId)};`,
+  ];
+  const cols = ['id', 'location_id', 'business_date', 'category', 'author', 'message', 'comments', 'attachment_count', 'created'];
+  // Notes can be long, so batch by size rather than count (D1 statements max out at 100 KB).
+  let batch = [];
+  let size = 0;
+  const flush = () => {
+    if (batch.length) stmts.push(`INSERT OR REPLACE INTO log_book_posts (${cols.join(',')}) VALUES\n${batch.join(',\n')};`);
+    batch = [];
+    size = 0;
+  };
+  for (const p of posts) {
+    const v = `(${cols.map((c) => lit(c === 'location_id' ? locationId : p[c])).join(',')})`;
+    if (size + v.length > 60_000) flush();
+    batch.push(v);
+    size += v.length;
+  }
+  flush();
+  return stmts;
 }
 
 /** Replaces the whole date range for a location, so deleted shifts disappear too. */

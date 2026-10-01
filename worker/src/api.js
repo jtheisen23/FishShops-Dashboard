@@ -337,3 +337,32 @@ export async function sevenShifts(env, url, user) {
     sync,
   };
 }
+
+const LOG_BOOK_LIMIT = 3000;
+
+/** 7shifts log book entries for a date range, for the user's assigned locations. */
+export async function logBook(env, url, user) {
+  const q = readQuery(url, user);
+  const { results: all } = await env.DB.prepare(
+    `SELECT id, name FROM locations WHERE id IN (${user.locations.map(() => '?').join(',')}) ORDER BY sort_order, name`,
+  )
+    .bind(...user.locations)
+    .all();
+  const locs = q.locations;
+  const { results } = await env.DB.prepare(
+    `SELECT id, location_id, business_date, category, author, message, comments, attachment_count, created
+       FROM log_book_posts
+      WHERE business_date BETWEEN ? AND ? AND location_id IN (${locs.map(() => '?').join(',')})
+      ORDER BY business_date DESC, location_id, category
+      LIMIT ${LOG_BOOK_LIMIT + 1}`,
+  )
+    .bind(q.current.start, q.current.end, ...locs)
+    .all();
+  const truncated = results.length > LOG_BOOK_LIMIT;
+  const posts = results.slice(0, LOG_BOOK_LIMIT).map((r) => {
+    let comments = [];
+    try { comments = JSON.parse(r.comments || '[]'); } catch { /* keep empty */ }
+    return { ...r, comments };
+  });
+  return { locations: all, posts, truncated };
+}

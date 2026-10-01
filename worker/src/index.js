@@ -41,6 +41,8 @@ async function route(request, env) {
         return json(await api.items(env, url, user));
       case '/api/sevenshifts':
         return json(await api.sevenShifts(env, url, user));
+      case '/api/logbook':
+        return json(await api.logBook(env, url, user));
       case '/api/admin/users':
         return json(await admin.listUsers(env, user));
       case '/api/admin/audit':
