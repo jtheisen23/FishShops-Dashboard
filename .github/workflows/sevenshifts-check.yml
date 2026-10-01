@@ -5,6 +5,11 @@ name: 7shifts connection check
 # appears in the run's summary; it contains no employee names.
 on:
   workflow_dispatch:
+    inputs:
+      probe:
+        description: 'Also probe log book endpoints (field names only)'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -22,4 +27,6 @@ jobs:
         env:
           SEVENSHIFTS_ACCESS_TOKEN: ${{ secrets.SEVENSHIFTS_ACCESS_TOKEN }}
           LOCATIONS_JSON: ${{ secrets.LOCATIONS_JSON }}
-        run: node etl/src/sevenshifts-sync.js --check
+          PROBE: ${{ inputs.probe }}
+        run: |
+          if [ "$PROBE" = "true" ]; then node etl/src/sevenshifts-probe.js; else node etl/src/sevenshifts-sync.js --check; fi
