@@ -286,13 +286,14 @@ const shiftDate = (s, n) => {
 };
 
 /**
- * 7shifts tab (every user, for their own locations): scheduled labor
+ * 7shifts tab (users with the 7shifts permission, for their own locations): scheduled labor
  * (7shifts) against actual labor and sales (Toast) for the selected period,
  * plus the next 14 days of schedule with a sales projection from the last 4
  * weeks' same-weekday average. Toast labor needs the labor section and sales
  * figures the sales section, as on the other tabs.
  */
 export async function sevenShifts(env, url, user) {
+  requireSection(user, 'sevenshifts');
   const q = readQuery(url, user);
   const today = laDate.format(new Date());
   const upEnd = shiftDate(today, 13);
@@ -342,6 +343,7 @@ const LOG_BOOK_LIMIT = 3000;
 
 /** 7shifts log book entries for a date range, for the user's assigned locations. */
 export async function logBook(env, url, user) {
+  requireSection(user, 'sevenshifts');
   const q = readQuery(url, user);
   const { results: all } = await env.DB.prepare(
     `SELECT id, name FROM locations WHERE id IN (${user.locations.map(() => '?').join(',')}) ORDER BY sort_order, name`,
@@ -380,6 +382,7 @@ const FILE_HOST = 'files.7shifts.com';
  * post's location. Images and PDFs open inline; anything else downloads.
  */
 export async function logBookFile(env, url, user) {
+  requireSection(user, 'sevenshifts');
   const postId = Number(url.searchParams.get('post'));
   const index = Number(url.searchParams.get('i'));
   if (!Number.isInteger(postId) || !Number.isInteger(index) || index < 0) throw new HttpError(400, 'Bad attachment');
