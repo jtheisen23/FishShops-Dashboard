@@ -1,7 +1,7 @@
 // Read-only data endpoints. Every query is scoped to the locations the
 // signed-in user is allowed to see, and each section checks its permission.
 
-import { HttpError, requireSection } from './auth.js';
+import { HttpError, requireAdmin, requireSection } from './auth.js';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_RANGE_DAYS = 1100;
@@ -273,4 +273,60 @@ export async function locations(env, user) {
     r.yesterday_complete = !!r.yesterday_synced_at && laDate.format(new Date(r.yesterday_synced_at)) > yesterday;
   }
   return { locations: results };
+}
+
+const shiftDate = (s, n) => {
+  const d = new Date(`${s}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+};
+
+/**
+ * Admin-only 7shifts tab: scheduled labor (7shifts) against actual labor and
+ * sales (Toast) for the selected period, plus the next 14 days of schedule
+ * with a sales projection from the last 4 weeks' same-weekday average.
+ */
+export async function sevenShifts(env, url, user) {
+  requireAdmin(user);
+  const q = readQuery(url, user);
+  const today = laDate.format(new Date());
+  const upEnd = shiftDate(today, 13);
+  const histStart = shiftDate(today, -28);
+  const inList = q.locations.map(() => '?').join(',');
+  const binds = (start, end) => [start, end, ...q.locations];
+  const { start, end } = q.current;
+  const stmt = (sql, b) => env.DB.prepare(sql.replaceAll('{LOCATIONS}', inList)).bind(...b);
+
+  const res = await env.DB.batch([
+    stmt(`SELECT business_date, location_id, SUM(hours) AS hours, SUM(cost) AS cost, SUM(shifts) AS shifts,
+                 SUM(open_shifts) AS open_shifts, SUM(open_hours) AS open_hours
+            FROM scheduled_labor WHERE ${RANGE} GROUP BY business_date, location_id ORDER BY business_date`, binds(start, end)),
+    stmt(`SELECT business_date, location_id, SUM(regular_hours + overtime_hours) AS hours, SUM(regular_cost + overtime_cost) AS cost
+            FROM labor_daily WHERE ${LABOR_RANGE} GROUP BY business_date, location_id ORDER BY business_date`, binds(start, end)),
+    stmt(`SELECT business_date, location_id, net_sales FROM daily_sales WHERE ${RANGE} ORDER BY business_date`, binds(start, end)),
+    stmt(`SELECT role AS name, SUM(hours) AS hours, SUM(cost) AS cost, SUM(shifts) AS shifts
+            FROM scheduled_labor WHERE ${RANGE} GROUP BY role`, binds(start, end)),
+    stmt(`SELECT job_title AS name, SUM(regular_hours + overtime_hours) AS hours, SUM(regular_cost + overtime_cost) AS cost
+            FROM labor_daily WHERE ${LABOR_RANGE} GROUP BY job_title`, binds(start, end)),
+    stmt(`SELECT business_date, location_id, SUM(hours) AS hours, SUM(cost) AS cost, SUM(shifts) AS shifts,
+                 SUM(open_shifts) AS open_shifts, SUM(open_hours) AS open_hours
+            FROM scheduled_labor WHERE ${RANGE} GROUP BY business_date, location_id ORDER BY business_date`, binds(today, upEnd)),
+    stmt(`SELECT location_id, CAST(strftime('%w', business_date) AS INTEGER) AS weekday, AVG(net_sales) AS net_sales
+            FROM daily_sales WHERE ${RANGE} GROUP BY location_id, weekday`, binds(histStart, shiftDate(today, -1))),
+    stmt(`SELECT location_id, synced_at, first_date, last_date FROM schedule_sync WHERE location_id IN ({LOCATIONS})`, q.locations),
+  ]);
+  const [scheduled, actual, sales, schedRoles, actualJobs, upcoming, weekdaySales, sync] = res.map((r) => r.results);
+  return {
+    query: q,
+    today,
+    upcomingEnd: upEnd,
+    scheduled,
+    actual,
+    sales,
+    schedRoles,
+    actualJobs,
+    upcoming,
+    weekdaySales,
+    sync,
+  };
 }
