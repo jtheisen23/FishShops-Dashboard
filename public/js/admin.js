@@ -139,6 +139,7 @@ const GROUP_DIMENSIONS = [
   ['dining_option', 'Dining options'],
   ['revenue_center', 'Revenue centers'],
   ['discount', 'Discounts'],
+  ['labor_job', 'Labor jobs'],
 ];
 let groupsDimension = 'sales_category';
 
@@ -160,10 +161,12 @@ async function groupsCard(ctx) {
     // Refreshed only when a box loses focus, never while typing.
     let lastFocused = null;
     const chips = h('div', { class: 'chips', style: { margin: '4px 0 10px' } });
+    // Labor jobs also offer the 7shifts roles, so jobs can be filed under them.
+    const suggestions = data.suggestions || [];
     const refreshChips = () => {
-      const names = [...new Set(inputs.map((i) => i.input.value.trim()).filter(Boolean))].sort();
+      const names = [...new Set([...suggestions, ...inputs.map((i) => i.input.value.trim()).filter(Boolean)])].sort();
       chips.replaceChildren(
-        ...(names.length ? [h('span', { class: 'muted small', style: { alignSelf: 'center' } }, 'Existing groups:')] : []),
+        ...(names.length ? [h('span', { class: 'muted small', style: { alignSelf: 'center' } }, suggestions.length ? 'Groups and 7shifts roles:' : 'Existing groups:')] : []),
         ...names.map((n) => h('button', {
           type: 'button',
           class: 'chip',
@@ -205,7 +208,7 @@ async function groupsCard(ctx) {
             h('table', {},
               h('thead', {}, h('tr', {},
                 h('th', { class: 'text' }, 'Toast name'),
-                h('th', {}, groupsDimension === 'discount' ? 'Discounts, last 12 months' : 'Net sales, last 12 months'),
+                h('th', {}, groupsDimension === 'discount' ? 'Discounts, last 12 months' : groupsDimension === 'labor_job' ? 'Labor $, last 12 months' : 'Net sales, last 12 months'),
                 h('th', { class: 'text' }, 'Group as'))),
               h('tbody', {}, inputs.map((i) => h('tr', {},
                 h('td', { class: 'text' }, i.label),
@@ -235,7 +238,7 @@ async function groupsCard(ctx) {
     h('div', { class: 'card-head' },
       h('div', {},
         h('h2', {}, 'Category groups'),
-        h('div', { class: 'sub' }, 'Combine Toast names into one reporting group — e.g. type "Beer" next to Draft, Draft Beer and HH Draft, or "Manager Comps" next to each manager comp discount. Leave blank to keep a name as is. Applies to all dates instantly; Toast data is not changed.')),
+        h('div', { class: 'sub' }, 'Combine Toast names into one reporting group — e.g. type "Beer" next to Draft, Draft Beer and HH Draft, or "Manager Comps" next to each manager comp discount. Labor jobs: file each Toast job under a 7shifts role (e.g. Line Cook, Prep Cook and Dishwasher under "Kitchen") so the Labor and 7shifts tabs compare like with like. Leave blank to keep a name as is. Applies to all dates instantly; Toast data is not changed.')),
       h('div', { class: 'seg', role: 'group' }, buttons)),
     body);
 }

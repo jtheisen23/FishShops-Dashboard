@@ -141,7 +141,9 @@ labor from Toast and shows the next 14 days of schedule. Add a GitHub secret
 `SEVENSHIFTS_ACCESS_TOKEN` (7shifts → Settings → Developer tools → Access tokens); each Toast sync
 then also loads published shifts for the last few days and the next 14. Run *Actions → 7shifts
 connection check* to confirm the token and how 7shifts locations match the dashboard's (names are
-matched; add `"sevenShiftsId": <id>` to a location in `LOCATIONS_JSON` to pin one).
+matched; add `"sevenShiftsId": <id>` to a location in `LOCATIONS_JSON` to pin one). File Toast jobs
+under 7shifts roles in *Admin → Category groups → Labor jobs*; the Labor and 7shifts tabs then group
+jobs by role (each role expands to its jobs).
 
 > GitHub pauses scheduled workflows after 60 days with no activity in the repo. If that happens,
 > re-enable the workflow from the Actions tab.
