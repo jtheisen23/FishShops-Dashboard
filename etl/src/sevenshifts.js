@@ -79,11 +79,42 @@ export class SevenShiftsClient {
     });
   }
 
+  /** Log book posts for one location and date (the API ignores date ranges). */
+  logBookPosts(companyId, locationId, date) {
+    return this.list(`/v2/company/${companyId}/log_book_posts`, { location_id: locationId, date });
+  }
+
+  /** Every log book post a location has. */
+  allLogBookPosts(companyId, locationId) {
+    return this.list(`/v2/company/${companyId}/log_book_posts`, { location_id: locationId });
+  }
+
+  logBookCategories(companyId, locationId) {
+    return this.list(`/v2/company/${companyId}/log_book_categories`, { location_id: locationId });
+  }
+
+  /** Comments for a batch of posts. */
+  logBookComments(companyId, postIds) {
+    return this.list(`/v2/company/${companyId}/log_book_comments`, { log_book_ids: postIds.join(',') });
+  }
+
+  /** id -> display name for every user in the company. */
+  async userNames(companyId) {
+    const users = await this.list(`/v2/company/${companyId}/users`);
+    return new Map(users.map((u) => [u.id, displayName(u)]));
+  }
+
   /** Current wages of one user; used when a shift has no wage on it. */
   async userWages(companyId, userId) {
     const body = await this.get(`/v2/company/${companyId}/users/${userId}/wages`);
     return body?.data?.current_wages ?? [];
   }
+}
+
+export function displayName(u) {
+  const first = u?.preferred_first_name || u?.first_name || '';
+  const last = u?.preferred_last_name || u?.last_name || '';
+  return `${first} ${last}`.trim();
 }
 
 const norm = (s) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();

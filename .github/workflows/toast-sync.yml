@@ -21,6 +21,10 @@ on:
       locations:
         description: 'Comma-separated location ids (e.g. PL,PB). Empty = all.'
         required: false
+      logbook_all:
+        description: 'Also reload the entire 7shifts log book history (one-time)'
+        type: boolean
+        default: false
 
 # Each kind of run (start date + locations + days) gets its own queue, so an
 # hourly run can't displace a queued nightly or backfill run.
@@ -89,6 +93,7 @@ jobs:
           IN_START: ${{ inputs.start }}
           IN_END: ${{ inputs.end }}
           IN_DAYS: ${{ inputs.days }}
+          IN_LOGBOOK_ALL: ${{ inputs.logbook_all }}
           SCHEDULE: ${{ github.event.schedule }}
         run: |
           if [ -z "$SEVENSHIFTS_ACCESS_TOKEN" ]; then
@@ -106,4 +111,5 @@ jobs:
           else
             args+=(--days 2)
           fi
+          [ "$IN_LOGBOOK_ALL" = "true" ] && args+=(--logbook-all)
           node etl/src/sevenshifts-sync.js "${args[@]}"

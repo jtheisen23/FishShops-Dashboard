@@ -1040,6 +1040,7 @@ export async function sevenShifts(ctx) {
     card('By role', hasActual ? `${fmtRange(ctx.q.current)} · Toast jobs roll up under the 7shifts role they're mapped to` : fmtRange(ctx.q.current), csvButton(() => roleTable), 
       unmapped && ctx.user.isAdmin ? h('div', { class: 'notice' }, `${unmapped} Toast job${unmapped === 1 ? ' isn\'t' : 's aren\'t'} mapped to a 7shifts role yet. Map them in Admin → Category groups → Labor jobs.`) : null,
       roleTable.el),
+    await logBookCard(ctx),
     card('Upcoming schedule', hasSales ? 'Next 14 days · projected sales = average of the same weekday over the last 4 weeks' : 'Next 14 days', csvButton(() => upTable), upEl, upTable.el),
   );
   later(() => {
@@ -1053,4 +1054,80 @@ export async function sevenShifts(ctx) {
     });
   });
   return node;
+}
+
+// ---------------------------------------------------------------------------
+// 7shifts log book (every user, every location)
+// ---------------------------------------------------------------------------
+const logState = { locs: null, category: '', search: '', shown: 100 };
+
+async function logBookCard(ctx) {
+  const body = h('div');
+  const status = h('span', { class: 'muted small' });
+  const params = (locs) => ({ locations: locs.join(',') });
+  let data = await ctx.api('/api/logbook', params(logState.locs || []));
+  logState.locs ??= data.locations.map((l) => l.id);
+
+  const chipRow = h('div', { class: 'chips' });
+  const drawChips = () => chipRow.replaceChildren(...data.locations.map((l, i) => {
+    const on = logState.locs.includes(l.id);
+    return h('button', {
+      type: 'button',
+      class: 'chip',
+      'aria-pressed': String(on),
+      onclick: async () => {
+        logState.locs = on ? logState.locs.filter((x) => x !== l.id) : [...logState.locs, l.id];
+        drawChips();
+        if (!logState.locs.length) { data = { ...data, posts: [] }; draw(); return; }
+        status.textContent = 'Loading…';
+        data = await ctx.api('/api/logbook', params(logState.locs));
+        status.textContent = '';
+        draw();
+      },
+    }, h('span', { class: 'dot', style: { '--dot': `var(--s${(i % 8) + 1})` } }), l.name);
+  }));
+
+  const catSelect = h('select', { 'aria-label': 'Category', onchange: () => { logState.category = catSelect.value; logState.shown = 100; draw(); } });
+  const search = h('input', { type: 'text', placeholder: 'Search notes', value: logState.search, 'aria-label': 'Search log book' });
+  let t;
+  search.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => { logState.search = search.value; logState.shown = 100; draw(); }, 200); });
+
+  const nameOf = new Map(data.locations.map((l) => [l.id, l.name]));
+  const para = (text) => h('div', { class: 'log-msg' }, text);
+
+  function draw() {
+    const cats = [...new Set(data.posts.map((p) => p.category))].sort();
+    catSelect.replaceChildren(h('option', { value: '' }, 'All categories'), ...cats.map((c) => h('option', { value: c, selected: c === logState.category }, c)));
+    const q = logState.search.trim().toLowerCase();
+    const posts = data.posts.filter((p) =>
+      (!logState.category || p.category === logState.category) &&
+      (!q || `${p.message} ${p.author} ${p.category} ${p.comments.map((c) => c.message).join(' ')}`.toLowerCase().includes(q)));
+    const shown = posts.slice(0, logState.shown);
+    const groups = [];
+    for (const p of shown) {
+      const k = `${p.business_date}|${p.location_id}`;
+      if (groups.at(-1)?.k !== k) groups.push({ k, date: p.business_date, loc: p.location_id, posts: [] });
+      groups.at(-1).posts.push(p);
+    }
+    body.replaceChildren(...[
+      posts.length ? null : h('div', { class: 'muted', style: { padding: '12px 0' } }, 'No log book entries for these dates and filters.'),
+      ...groups.map((g) => h('div', { class: 'log-day' },
+        h('div', { class: 'log-day-head' }, h('b', {}, `${fmtWeekday(g.date)} ${fmtDate(g.date)}`), ' · ', nameOf.get(g.loc) || g.loc),
+        ...g.posts.map((p) => h('div', { class: 'log-post' },
+          h('div', { class: 'log-meta' },
+            h('span', { class: 'pill on' }, p.category),
+            p.author ? h('span', { class: 'muted small' }, p.author) : null,
+            p.attachment_count ? h('span', { class: 'muted small' }, `📎 ${p.attachment_count}`) : null),
+          para(p.message),
+          ...p.comments.map((c) => h('div', { class: 'log-comment' }, h('span', { class: 'muted small' }, `${c.author || 'Comment'}: `), c.message)))))),
+      posts.length > shown.length
+        ? h('button', { class: 'btn', type: 'button', style: { marginTop: '8px' }, onclick: () => { logState.shown += 200; draw(); } }, `Show more (${posts.length - shown.length} left)`)
+        : null,
+      data.truncated ? h('div', { class: 'muted small', style: { marginTop: '8px' } }, 'Showing the latest 3,000 entries; pick a shorter date range to see older ones.') : null,
+    ].filter(Boolean));
+  }
+  drawChips();
+  draw();
+  return card('Log book', `${fmtRange(ctx.q.current)} · from 7shifts · all locations`, [catSelect, search, status],
+    h('div', { style: { margin: '0 0 12px' } }, chipRow), body);
 }

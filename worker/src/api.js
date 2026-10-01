@@ -337,3 +337,36 @@ export async function sevenShifts(env, url, user) {
     sync,
   };
 }
+
+const LOG_BOOK_LIMIT = 3000;
+
+/**
+ * 7shifts log book entries for a date range. Every signed-in user can read
+ * the log book for every location (an owner decision), so this checks
+ * locations against the locations table rather than the user's rights.
+ */
+export async function logBook(env, url) {
+  const p = url.searchParams;
+  const period = readPeriod(p, 'start', 'end', true);
+  const { results: all } = await env.DB.prepare('SELECT id, name FROM locations WHERE active = 1 ORDER BY sort_order, name').all();
+  const known = new Set(all.map((l) => l.id));
+  const requested = (p.get('locations') || '').split(',').map((s) => s.trim()).filter((s) => known.has(s));
+  const locs = requested.length ? requested : [...known];
+  if (!locs.length) return { locations: all, posts: [], truncated: false };
+  const { results } = await env.DB.prepare(
+    `SELECT id, location_id, business_date, category, author, message, comments, attachment_count, created
+       FROM log_book_posts
+      WHERE business_date BETWEEN ? AND ? AND location_id IN (${locs.map(() => '?').join(',')})
+      ORDER BY business_date DESC, location_id, category
+      LIMIT ${LOG_BOOK_LIMIT + 1}`,
+  )
+    .bind(period.start, period.end, ...locs)
+    .all();
+  const truncated = results.length > LOG_BOOK_LIMIT;
+  const posts = results.slice(0, LOG_BOOK_LIMIT).map((r) => {
+    let comments = [];
+    try { comments = JSON.parse(r.comments || '[]'); } catch { /* keep empty */ }
+    return { ...r, comments };
+  });
+  return { locations: all, posts, truncated };
+}
