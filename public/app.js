@@ -13,7 +13,7 @@ const TABS = [
   { id: 'discounts', label: 'Discounts & comps', section: 'discounts', render: views.discounts },
   { id: 'labor', label: 'Labor', section: 'labor', render: views.labor },
   { id: 'items', label: 'Menu items', section: 'items', render: views.items },
-  { id: 'sevenshifts', label: '7shifts', everyone: true, render: views.sevenShifts },
+  { id: 'sevenshifts', label: '7shifts', section: 'sevenshifts', render: views.sevenShifts },
   { id: 'admin', label: 'Admin', admin: true, render: adminView },
 ];
 
@@ -98,7 +98,7 @@ function resolvedPeriods() {
 // Filters, tabs
 // ---------------------------------------------------------------------------
 function visibleTabs() {
-  return TABS.filter((t) => (t.everyone ? true : t.admin ? user.isAdmin : user.sections[t.section]));
+  return TABS.filter((t) => (t.admin ? user.isAdmin : user.sections[t.section]));
 }
 
 function buildFilters() {

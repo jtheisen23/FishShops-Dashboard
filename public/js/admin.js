@@ -2,7 +2,7 @@
 
 import { fmt, h } from './util.js';
 
-const SECTION_LABELS = { sales: 'Sales', discounts: 'Discounts & comps', labor: 'Labor', items: 'Menu items' };
+const SECTION_LABELS = { sales: 'Sales', discounts: 'Discounts & comps', labor: 'Labor', items: 'Menu items', sevenshifts: '7shifts' };
 
 export async function adminView(ctx) {
   const data = await ctx.api('/api/admin/users', null, { noQuery: true });
@@ -58,7 +58,7 @@ export async function adminView(ctx) {
 
 function userForm(ctx, data, u, onSaved, onCancel) {
   const isNew = !u;
-  u = u || { email: '', name: '', role: 'viewer', active: true, allLocations: false, locations: [], sections: { sales: true, discounts: false, labor: false, items: true } };
+  u = u || { email: '', name: '', role: 'viewer', active: true, allLocations: false, locations: [], sections: { sales: true, discounts: false, labor: false, items: true, sevenshifts: false } };
   const err = h('div', { class: 'error', style: { padding: '8px 0', textAlign: 'left' } });
 
   const email = h('input', { type: 'email', value: u.email, required: true, disabled: !isNew, placeholder: 'name@example.com' });

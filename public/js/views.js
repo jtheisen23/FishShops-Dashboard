@@ -849,7 +849,7 @@ function renderItems(ctx, data) {
 }
 
 // ---------------------------------------------------------------------------
-// 7shifts (every user): scheduled vs actual labor, upcoming schedule.
+// 7shifts (users with the 7shifts permission): scheduled vs actual labor, upcoming schedule.
 // Toast labor needs labor access and sales figures sales access.
 // ---------------------------------------------------------------------------
 const shiftsState = { metric: 'hours' };

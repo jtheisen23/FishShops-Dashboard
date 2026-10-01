@@ -56,11 +56,11 @@ export async function saveUser(env, user, body) {
 
   const stmts = [
     env.DB.prepare(
-      `INSERT INTO users (email, name, role, all_locations, can_sales, can_discounts, can_labor, can_items, active, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      `INSERT INTO users (email, name, role, all_locations, can_sales, can_discounts, can_labor, can_items, can_sevenshifts, active, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
        ON CONFLICT(email) DO UPDATE SET name=excluded.name, role=excluded.role, all_locations=excluded.all_locations,
          can_sales=excluded.can_sales, can_discounts=excluded.can_discounts, can_labor=excluded.can_labor,
-         can_items=excluded.can_items, active=excluded.active, updated_at=excluded.updated_at`,
+         can_items=excluded.can_items, can_sevenshifts=excluded.can_sevenshifts, active=excluded.active, updated_at=excluded.updated_at`,
     ).bind(
       email,
       name,
@@ -70,6 +70,7 @@ export async function saveUser(env, user, body) {
       sections.discounts ? 1 : 0,
       sections.labor ? 1 : 0,
       sections.items ? 1 : 0,
+      sections.sevenshifts ? 1 : 0,
       active ? 1 : 0,
     ),
     env.DB.prepare('DELETE FROM user_locations WHERE email = ?').bind(email),

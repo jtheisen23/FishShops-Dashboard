@@ -11,8 +11,8 @@ const env = {
   SEVENSHIFTS_ACCESS_TOKEN: 'tok',
   DB: { prepare: () => ({ bind: (id) => ({ first: async () => rows[id] ?? null }) }) },
 };
-const user = { locations: ['PB'] };
-const call = (post, i, e = env) => logBookFile(e, new URL(`https://x/api/logbook/file?post=${post}&i=${i}`), user);
+const user = { locations: ['PB'], sections: { sevenshifts: true } };
+const call = (post, i, e = env, u = user) => logBookFile(e, new URL(`https://x/api/logbook/file?post=${post}&i=${i}`), u);
 
 test('streams an allowed image with the 7shifts token', async (t) => {
   t.mock.method(globalThis, 'fetch', async (u, init) => {
@@ -39,4 +39,8 @@ test('refuses other locations, unknown files and foreign hosts', async () => {
   await assert.rejects(call(3, 0), { status: 404 });
   await assert.rejects(call('x', 0), { status: 400 });
   await assert.rejects(call(1, 0, { ...env, SEVENSHIFTS_ACCESS_TOKEN: '' }), { status: 503 });
+});
+
+test('refuses users without the 7shifts permission', async () => {
+  await assert.rejects(call(1, 0, env, { locations: ['PB'], sections: { sevenshifts: false } }), { status: 403 });
 });
