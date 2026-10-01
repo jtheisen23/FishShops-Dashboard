@@ -1,7 +1,7 @@
 // User management for admins: who can see which locations and sections.
 
 import { HttpError, requireAdmin, SECTIONS } from './auth.js';
-import { MIX_DIMENSIONS } from './api.js';
+import { EXCLUDED_JOBS, MIX_DIMENSIONS } from './api.js';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -107,7 +107,7 @@ export async function auditLog(env, user) {
 // revenue centers, discounts) into admin-defined groups for reporting.
 // ---------------------------------------------------------------------------
 
-const GROUP_DIMENSIONS = new Set([...MIX_DIMENSIONS, 'discount']);
+const GROUP_DIMENSIONS = new Set([...MIX_DIMENSIONS, 'discount', 'labor_job']);
 
 function readDimension(value) {
   if (!GROUP_DIMENSIONS.has(value)) throw new HttpError(400, 'Unknown dimension');
@@ -120,6 +120,21 @@ export async function listGroups(env, user, url) {
   const dimension = readDimension(url.searchParams.get('dimension') || 'sales_category');
   // Discounts live in their own table; the others in sales_mix. Either way the
   // amount column is last-12-month dollars (net sales, or discount amount).
+  if (dimension === 'labor_job') {
+    // Toast jobs, to be grouped under 7shifts roles (offered as suggestions).
+    const [jobs, roles] = await env.DB.batch([
+      env.DB.prepare(
+        `SELECT l.job_title AS label, ROUND(SUM(l.regular_cost + l.overtime_cost), 2) AS net_sales, MAX(l.business_date) AS last_seen, g.group_name
+           FROM labor_daily l
+           LEFT JOIN category_groups g ON g.dimension = 'labor_job' AND g.source_label = l.job_title
+          WHERE l.business_date >= date('now', '-365 days')
+            AND LOWER(TRIM(l.job_title)) NOT IN (${EXCLUDED_JOBS.map(() => '?').join(',')})
+          GROUP BY l.job_title ORDER BY net_sales DESC`,
+      ).bind(...EXCLUDED_JOBS),
+      env.DB.prepare('SELECT DISTINCT role FROM scheduled_labor ORDER BY role'),
+    ]);
+    return { dimension, labels: jobs.results, suggestions: roles.results.map((r) => r.role) };
+  }
   const stmt =
     dimension === 'discount'
       ? env.DB.prepare(

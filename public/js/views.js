@@ -706,26 +706,53 @@ export async function labor(ctx) {
   }
   const locTable = dataTable({ columns: locCols, rows: locRows, total: locRows.length > 1 ? locTotal : null, sortKey: 'cost', filename: 'labor-by-location' });
 
-  // Job table + chart
-  const jobCmp = new Map((data.byJob.compare || []).map((r) => [r.job_title, r]));
-  const jobLoc = new Map((data.byLocationJob.current || []).map((r) => [`${r.location_id}|${r.job_title}`, r]));
-  const jobRows = (data.byJob.current || []).map((r) => {
-    const cost = r.regular_cost + r.overtime_cost;
-    const c = jobCmp.get(r.job_title);
+  // Job table + chart. Rows arrive per (group, Toast job); jobs mapped to a
+  // 7shifts role in Admin > Category groups roll up under it and expand.
+  const jf = ['regular_hours', 'overtime_hours', 'regular_cost', 'overtime_cost'];
+  const byGroup = sumBy(data.byJob.current, 'job_title', jf);
+  const cmpByGroup = sumBy(data.byJob.compare, 'job_title', jf);
+  const srcKey = (r) => `${r.job_title}|${r.source_name ?? r.job_title}`;
+  const bySrc = sumBy(data.byJob.current, srcKey, jf);
+  const cmpBySrc = sumBy(data.byJob.compare, srcKey, jf);
+  const locByGroup = sumBy(data.byLocationJob.current, (r) => `${r.location_id}|${r.job_title}`, ['cost']);
+  const locBySrc = sumBy(data.byLocationJob.current, (r) => `${r.location_id}|${srcKey(r)}`, ['cost']);
+  const sourcesOf = new Map();
+  for (const r of data.byJob.current || []) {
+    if (!sourcesOf.has(r.job_title)) sourcesOf.set(r.job_title, new Set());
+    sourcesOf.get(r.job_title).add(r.source_name ?? r.job_title);
+  }
+  const jobRow = (job, r, c, locOf) => {
+    const cost = (r?.regular_cost ?? 0) + (r?.overtime_cost ?? 0);
+    const hours = (r?.regular_hours ?? 0) + (r?.overtime_hours ?? 0);
     return {
-      job: r.job_title,
+      job,
       cost,
       costCmp: c ? c.regular_cost + c.overtime_cost : hasCmp ? 0 : null,
-      hours: r.regular_hours + r.overtime_hours,
-      ot: r.overtime_hours,
-      otCost: r.overtime_cost,
-      avgRate: div(cost, r.regular_hours + r.overtime_hours),
+      hours,
+      ot: r?.overtime_hours ?? 0,
+      otCost: r?.overtime_cost ?? 0,
+      avgRate: div(cost, hours),
       pctSales: hasSales ? div(cost, S.net_sales) : null,
-      ...Object.fromEntries(ids.map((id) => [`loc_${id}`, jobLoc.get(`${id}|${r.job_title}`)?.cost ?? 0])),
+      ...Object.fromEntries(ids.map((id) => [`loc_${id}`, locOf(id)?.cost ?? 0])),
     };
-  });
+  };
+  const jobRows = [...byGroup.keys()]
+    .map((g) => {
+      const row = jobRow(g, byGroup.get(g), cmpByGroup.get(g), (id) => locByGroup.get(`${id}|${g}`));
+      const sources = [...(sourcesOf.get(g) || [])];
+      if (sources.length > 1 || (sources.length === 1 && sources[0] !== g)) {
+        row.children = sources
+          .map((src) => {
+            const k = `${g}|${src}`;
+            return jobRow(src, bySrc.get(k), cmpBySrc.get(k), (id) => locBySrc.get(`${id}|${k}`));
+          })
+          .sort((a, b) => b.cost - a.cost);
+      }
+      return row;
+    })
+    .sort((a, b) => b.cost - a.cost);
   const jobCols = [
-    { key: 'job', label: 'Job', text: true },
+    { key: 'job', label: 'Job / role', text: true },
     { key: 'cost', label: 'Labor $', fmt: fmt.money },
   ];
   if (hasCmp) jobCols.push({ key: 'chg', label: 'Change', value: (r) => change(r.cost, r.costCmp), render: (r) => deltaNode(change(r.cost, r.costCmp), { invert: true }) });
@@ -917,19 +944,32 @@ export async function sevenShifts(ctx) {
     filename: 'scheduled-vs-actual-by-location',
   });
 
-  // By role / job (matched by name; 7shifts roles and Toast jobs may differ)
+  // By role. Toast jobs count toward the 7shifts role they're mapped to in
+  // Admin > Category groups > Labor jobs (else matched by name) and expand.
   const key = (n) => String(n || '').trim().toLowerCase();
   const roles = new Map();
-  for (const r of data.schedRoles) roles.set(key(r.name), { name: r.name, sHours: r.hours, sCost: r.cost, aHours: null, aCost: null });
+  for (const r of data.schedRoles) roles.set(key(r.name), { name: r.name, sHours: r.hours, sCost: r.cost, aHours: null, aCost: null, jobs: [] });
   for (const j of data.actualJobs) {
-    const e = roles.get(key(j.name)) || { name: j.name, sHours: null, sCost: null };
-    roles.set(key(j.name), { ...e, aHours: j.hours, aCost: j.cost });
+    let e = roles.get(key(j.name));
+    if (!e) roles.set(key(j.name), (e = { name: j.name, sHours: null, sCost: null, aHours: null, aCost: null, jobs: [] }));
+    e.aHours = (e.aHours ?? 0) + j.hours;
+    e.aCost = (e.aCost ?? 0) + j.cost;
+    e.jobs.push(j);
   }
-  const roleRows = [...roles.values()].map((r) => ({
-    ...r,
-    vHours: r.sHours !== null && r.aHours !== null ? r.aHours - r.sHours : null,
-    source: r.sHours === null ? 'Toast only' : r.aHours === null ? '7shifts only' : 'Both',
-  }));
+  const roleRows = [...roles.values()].map(({ jobs, ...r }) => {
+    const row = {
+      ...r,
+      vHours: r.sHours !== null && r.aHours !== null ? r.aHours - r.sHours : null,
+      source: r.sHours === null ? 'Toast only' : r.aHours === null ? '7shifts only' : 'Both',
+    };
+    if (jobs.length > 1 || (jobs.length === 1 && key(jobs[0].source_name) !== key(r.name))) {
+      row.children = jobs
+        .map((j) => ({ name: j.source_name, sHours: null, sCost: null, aHours: j.hours, aCost: j.cost, vHours: null, source: 'Toast job' }))
+        .sort((a, b) => b.aHours - a.aHours);
+    }
+    return row;
+  });
+  const unmapped = roleRows.filter((r) => r.source === 'Toast only').length;
   const roleTable = dataTable({
     columns: [
       { key: 'name', label: 'Role / job', text: true },
@@ -994,7 +1034,9 @@ export async function sevenShifts(ctx) {
     h('div', { class: 'grid kpis' }, tiles),
     card('Scheduled vs actual by day', fmtRange(ctx.q.current), metricSeg, dailyEl),
     card('By location', fmtRange(ctx.q.current), csvButton(() => locTable), locTable.el),
-    card('By role', `${fmtRange(ctx.q.current)} · 7shifts roles and Toast jobs are matched by name`, csvButton(() => roleTable), roleTable.el),
+    card('By role', `${fmtRange(ctx.q.current)} · Toast jobs roll up under the 7shifts role they're mapped to`, csvButton(() => roleTable), 
+      unmapped ? h('div', { class: 'notice' }, `${unmapped} Toast job${unmapped === 1 ? ' isn\'t' : 's aren\'t'} mapped to a 7shifts role yet. Map them in Admin → Category groups → Labor jobs.`) : null,
+      roleTable.el),
     card('Upcoming schedule', 'Next 14 days · projected sales = average of the same weekday over the last 4 weeks', csvButton(() => upTable), upEl, upTable.el),
   );
   later(() => {

@@ -198,16 +198,20 @@ export async function labor(env, url, user) {
     bothPeriods(
       env,
       q,
-      `SELECT job_title, SUM(regular_hours) AS regular_hours, SUM(overtime_hours) AS overtime_hours,
+      `SELECT COALESCE(g.group_name, l.job_title) AS job_title, l.job_title AS source_name,
+              SUM(regular_hours) AS regular_hours, SUM(overtime_hours) AS overtime_hours,
               SUM(regular_cost) AS regular_cost, SUM(overtime_cost) AS overtime_cost, SUM(shifts) AS shifts
-         FROM labor_daily WHERE ${LABOR_RANGE} GROUP BY job_title ORDER BY SUM(regular_cost + overtime_cost) DESC`,
+         FROM labor_daily l LEFT JOIN category_groups g ON g.dimension = 'labor_job' AND g.source_label = l.job_title
+        WHERE ${LABOR_RANGE} GROUP BY COALESCE(g.group_name, l.job_title), l.job_title ORDER BY SUM(regular_cost + overtime_cost) DESC`,
     ),
     bothPeriods(
       env,
       q,
-      `SELECT location_id, job_title, SUM(regular_hours + overtime_hours) AS hours, SUM(overtime_hours) AS overtime_hours,
+      `SELECT location_id, COALESCE(g.group_name, l.job_title) AS job_title, l.job_title AS source_name,
+              SUM(regular_hours + overtime_hours) AS hours, SUM(overtime_hours) AS overtime_hours,
               SUM(regular_cost + overtime_cost) AS cost
-         FROM labor_daily WHERE ${LABOR_RANGE} GROUP BY location_id, job_title`,
+         FROM labor_daily l LEFT JOIN category_groups g ON g.dimension = 'labor_job' AND g.source_label = l.job_title
+        WHERE ${LABOR_RANGE} GROUP BY location_id, COALESCE(g.group_name, l.job_title), l.job_title`,
     ),
     bothPeriods(
       env,
@@ -306,8 +310,10 @@ export async function sevenShifts(env, url, user) {
     stmt(`SELECT business_date, location_id, net_sales FROM daily_sales WHERE ${RANGE} ORDER BY business_date`, binds(start, end)),
     stmt(`SELECT role AS name, SUM(hours) AS hours, SUM(cost) AS cost, SUM(shifts) AS shifts
             FROM scheduled_labor WHERE ${RANGE} GROUP BY role`, binds(start, end)),
-    stmt(`SELECT job_title AS name, SUM(regular_hours + overtime_hours) AS hours, SUM(regular_cost + overtime_cost) AS cost
-            FROM labor_daily WHERE ${LABOR_RANGE} GROUP BY job_title`, binds(start, end)),
+    stmt(`SELECT COALESCE(g.group_name, l.job_title) AS name, l.job_title AS source_name,
+                 SUM(regular_hours + overtime_hours) AS hours, SUM(regular_cost + overtime_cost) AS cost
+            FROM labor_daily l LEFT JOIN category_groups g ON g.dimension = 'labor_job' AND g.source_label = l.job_title
+           WHERE ${LABOR_RANGE} GROUP BY COALESCE(g.group_name, l.job_title), l.job_title`, binds(start, end)),
     stmt(`SELECT business_date, location_id, SUM(hours) AS hours, SUM(cost) AS cost, SUM(shifts) AS shifts,
                  SUM(open_shifts) AS open_shifts, SUM(open_hours) AS open_hours
             FROM scheduled_labor WHERE ${RANGE} GROUP BY business_date, location_id ORDER BY business_date`, binds(today, upEnd)),
