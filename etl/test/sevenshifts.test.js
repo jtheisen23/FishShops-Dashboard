@@ -27,10 +27,11 @@ test('aggregateShifts sums hours and cost by local date and role', () => {
   const shifts = [
     // 5pm-11pm PDT on Oct 1 = 00:00-06:00Z Oct 2; dated Oct 1 locally
     { user_id: 1, role_id: 10, start: '2026-10-02T00:00:00Z', end: '2026-10-02T06:00:00Z', hourly_wage: 1650 },
-    { user_id: 2, role_id: 10, start: '2026-10-01T17:00:00Z', end: '2026-10-01T22:30:00Z', hourly_wage: 0, breaks: [{ length: 30, paid: false }] },
+    { user_id: 2, role_id: 10, start: '2026-10-01T17:00:00Z', end: '2026-10-01T22:30:00Z', hourly_wage: 0, breaks: [{ length: 30, type: 'unpaid' }, { length: 10, type: 'paid' }] },
     { user_id: null, open: true, role_id: 10, start: '2026-10-01T18:00:00Z', end: '2026-10-01T22:00:00Z' },
     { user_id: 3, role_id: 11, start: '2026-10-01T18:00:00Z', end: '2026-10-01T22:00:00Z', hourly_wage: 1600 },
     { user_id: 4, role_id: 10, start: '2026-10-01T18:00:00Z', end: '2026-10-01T22:00:00Z', hourly_wage: 1600, deleted: true },
+    { user_id: 5, role_id: 10, start: '2026-10-01T18:00:00Z', end: '2026-10-01T22:00:00Z', hourly_wage: 1600, soft_deleted: true },
   ];
   const rows = aggregateShifts(shifts, { timeZone: tz, roles, wageFor: (s) => (s.user_id === 2 ? 1800 : 0), excludedRoles: ['register'] });
   assert.equal(localDate('2026-10-02T00:00:00Z', tz), '2026-10-01');

@@ -138,8 +138,8 @@ const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : Number(v) 
 function unpaidBreakMinutes(s) {
   if (Array.isArray(s.breaks)) {
     return s.breaks
-      .filter((b) => !b.paid && b.is_paid !== true)
-      .reduce((m, b) => m + (num(b.length) || num(b.duration) || num(b.minutes)), 0);
+      .filter((b) => !b.paid && b.is_paid !== true && String(b.type ?? '').toLowerCase() !== 'paid')
+      .reduce((m, b) => m + (num(b.duration_override_min) || num(b.length) || num(b.duration) || num(b.minutes)), 0);
   }
   return num(s.unpaid_break_minutes) || num(s.break_minutes) || 0;
 }
@@ -160,7 +160,7 @@ export function aggregateShifts(shifts, { timeZone, roles, wageFor = () => 0, ex
   const roleName = (id) => roles.get(id) || (id ? `Role ${id}` : 'No role');
   const groups = new Map();
   for (const s of shifts) {
-    if (s.deleted || s.draft) continue;
+    if (s.deleted || s.soft_deleted || s.draft) continue;
     const start = Date.parse(s.start);
     const end = Date.parse(s.end);
     if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) continue;

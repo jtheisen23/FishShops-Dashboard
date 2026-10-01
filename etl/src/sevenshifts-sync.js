@@ -179,7 +179,7 @@ async function check(client, locations) {
         out(`Shifts with hourly_wage: ${wages.length}/${shifts.length}; median ${wages.length ? wages[Math.floor(wages.length / 2)] : 'n/a'} (expected in cents)`);
         out(`Open shifts: ${shifts.filter((s) => s.open || !s.user_id).length}; with breaks array: ${shifts.filter((s) => Array.isArray(s.breaks) && s.breaks.length).length}`);
         const sample = shifts.find((s) => Array.isArray(s.breaks) && s.breaks.length);
-        if (sample) out(`Break fields: ${Object.keys(sample.breaks[0]).join(', ')}`);
+        if (sample) out(`Break fields: ${Object.keys(sample.breaks[0]).join(', ')}; types: ${[...new Set(shifts.flatMap((s) => (s.breaks || []).map((b) => b.type)))].join(', ')}`);
         const rows = aggregateShifts(shifts, { timeZone: tz, roles: new Map(roles.map((x) => [x.id, x.name])), excludedRoles: EXCLUDED_ROLES });
         out(`Scheduled (published) hours: ${rows.reduce((s, x) => s + x.hours, 0).toFixed(1)}; cost from shift wages: $${rows.reduce((s, x) => s + x.cost, 0).toFixed(2)}`);
         const userId = shifts.find((s) => s.user_id && !s.open)?.user_id;
