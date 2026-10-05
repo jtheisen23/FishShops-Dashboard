@@ -492,8 +492,32 @@ export async function discounts(ctx) {
     if (!sourcesOf.has(r.discount_name)) sourcesOf.set(r.discount_name, new Set());
     sourcesOf.get(r.discount_name).add(r.source_name ?? r.discount_name);
   }
-  const discountRow = (name, c, p, locOf) => ({
+  // Approvers per Toast discount and per group, biggest amount first.
+  const apprBySrc = new Map();
+  const apprByGroup = new Map();
+  const addAppr = (map, k, r) => {
+    if (!map.has(k)) map.set(k, new Map());
+    const m = map.get(k);
+    const e = m.get(r.approver) || { name: r.approver, uses: 0, amount: 0 };
+    e.uses += r.uses;
+    e.amount += r.amount;
+    m.set(r.approver, e);
+  };
+  for (const r of data.approvals || []) {
+    addAppr(apprBySrc, srcKey(r), r);
+    addAppr(apprByGroup, r.discount_name, r);
+  }
+  const approversOf = (m) => [...(m?.values() || [])].sort((a, b) => b.amount - a.amount);
+  const apprText = (list) => list.map((a) => (a.uses > 1 ? `${a.name} (${a.uses})` : a.name)).join(', ');
+  const apprCell = (list) => {
+    if (!list.length) return h('span', { class: 'muted' }, '—');
+    const shown = list.slice(0, 3);
+    const more = list.length - shown.length;
+    return h('span', { title: apprText(list), style: { whiteSpace: 'normal' } }, apprText(shown), more ? h('span', { class: 'muted' }, ` +${more} more`) : null);
+  };
+  const discountRow = (name, c, p, locOf, appr = []) => ({
     name,
+    approvers: appr,
     uses: c?.uses ?? 0,
     amount: c?.amount ?? 0,
     share: div(c?.amount ?? 0, T.discounts),
@@ -503,12 +527,12 @@ export async function discounts(ctx) {
   });
   const rows = [...byGroup.keys()]
     .map((name) => {
-      const row = discountRow(name, byGroup.get(name), cmpByName.get(name), (id) => locByName.get(`${id}|${name}`));
+      const row = discountRow(name, byGroup.get(name), cmpByName.get(name), (id) => locByName.get(`${id}|${name}`), approversOf(apprByGroup.get(name)));
       const sources = [...(sourcesOf.get(name) || [])];
       if (sources.length > 1 || (sources.length === 1 && sources[0] !== name)) {
         row.children = sources.map((src) => {
           const k = `${name}|${src}`;
-          return discountRow(src, bySrc.get(k), cmpBySrc.get(k), (id) => locBySrc.get(`${id}|${k}`));
+          return discountRow(src, bySrc.get(k), cmpBySrc.get(k), (id) => locBySrc.get(`${id}|${k}`), approversOf(apprBySrc.get(k)));
         });
       }
       return row;
@@ -516,6 +540,7 @@ export async function discounts(ctx) {
     .sort((a, b) => b.amount - a.amount);
   const cols = [
     { key: 'name', label: 'Discount', text: true },
+    { key: 'approvedBy', label: 'Approved by', text: true, value: (r) => apprText(r.approvers), render: (r) => apprCell(r.approvers) },
     { key: 'uses', label: 'Uses', fmt: fmt.int },
     { key: 'amount', label: 'Amount', fmt: fmt.money },
     { key: 'share', label: 'Share', fmt: fmt.pct },

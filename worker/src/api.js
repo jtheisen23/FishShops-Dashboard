@@ -159,7 +159,7 @@ export async function mix(env, url, user) {
 export async function discounts(env, url, user) {
   requireSection(user, 'discounts');
   const q = readQuery(url, user);
-  const [byName, byLocation, byApprover, daily] = await Promise.all([
+  const [byName, byLocation, byApprover, daily, approvals] = await Promise.all([
     bothPeriods(
       env,
       q,
@@ -187,8 +187,17 @@ export async function discounts(env, url, user) {
       `SELECT business_date, location_id, gross_sales, discounts, net_sales
          FROM daily_sales WHERE ${RANGE} ORDER BY business_date`,
     ),
+    // Who approved each Toast discount, for the "Approved by" column.
+    bothPeriods(
+      env,
+      { ...q, compare: null },
+      `SELECT COALESCE(g.group_name, d.discount_name) AS discount_name, d.discount_name AS source_name, approver,
+              SUM(uses) AS uses, SUM(amount) AS amount
+         FROM discount_sales d LEFT JOIN category_groups g ON g.dimension = 'discount' AND g.source_label = d.discount_name
+        WHERE ${RANGE} AND approver <> '' GROUP BY COALESCE(g.group_name, d.discount_name), d.discount_name, approver`,
+    ),
   ]);
-  return { query: q, byName, byLocation, byApprover, daily };
+  return { query: q, byName, byLocation, byApprover, daily, approvals: approvals.current };
 }
 
 export async function labor(env, url, user) {
