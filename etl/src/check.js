@@ -45,6 +45,34 @@ function reason(err) {
   return err.message.slice(0, 200);
 }
 
+// Orders the dashboard files under revenue center "Unspecified", split by why
+// (no revenue center on the order, or one missing from the lookup) and by
+// order source and dining option, so they can be matched to Toast's reports.
+function unspecifiedRevenueCenters(orders, ctx) {
+  const { revenueCenters, diningOptions } = ctx.lookups;
+  const groups = new Map();
+  for (const order of orders) {
+    const { daily } = aggregateOrders([order], ctx);
+    if (!daily.orders) continue;
+    const guid = order.revenueCenter?.guid;
+    if (guid && revenueCenters.has(guid)) continue;
+    const key = [
+      guid ? `revenue center ${guid} not in lookup` : 'no revenue center',
+      `source "${order.source || 'none'}"`,
+      `dining option "${(order.diningOption?.guid && diningOptions.get(order.diningOption.guid)) || 'none'}"`,
+    ].join(', ');
+    const g = groups.get(key) ?? { orders: 0, net: 0 };
+    g.orders += 1;
+    g.net += daily.net_sales;
+    groups.set(key, g);
+  }
+  if (!groups.size) return [];
+  return [
+    'Unspecified revenue center breakdown:',
+    ...[...groups].sort((a, b) => b[1].net - a[1].net).map(([k, g]) => `  - ${k}: ${g.orders} orders, $${g.net.toFixed(2)}`),
+  ];
+}
+
 async function main() {
   const locations = loadLocations(args.config);
   const toast = new ToastClient({
@@ -106,7 +134,10 @@ async function main() {
             : x.name;
           lookups[keyFor[path]].set(x.guid, label);
         }
-        out(`✅ ${what}: ${list.length} found`);
+        const names = path.endsWith('revenueCenters') || path.endsWith('diningOptions')
+          ? ` (${list.map((x) => x?.name).filter(Boolean).join(', ')})`
+          : '';
+        out(`✅ ${what}: ${list.length} found${names}`);
       } catch (err) {
         out(`⚠️ ${what}: ${reason(err)}. Enable **${perm}** read access, or these will show as "Unspecified".`);
       }
@@ -122,6 +153,9 @@ async function main() {
       if (cats.length) out(`   Sales categories: ${cats.join(', ')}`);
       const dos = sales.mix.filter((m) => m.dimension === 'dining_option').map((m) => `${m.label} (${m.orders})`);
       if (dos.length) out(`   Dining options: ${dos.join(', ')}`);
+      const rcs = sales.mix.filter((m) => m.dimension === 'revenue_center').map((m) => `${m.label} $${m.net_sales.toFixed(0)} (${m.orders})`);
+      if (rcs.length) out(`   Revenue centers: ${rcs.join(', ')}`);
+      for (const line of unspecifiedRevenueCenters(orders, { timezone: tz, lookups })) out(`   ${line}`);
       if (!orders.length) out("   ⚠️ No orders that day. That's expected if the location was closed; otherwise check the GUID.");
     } catch (err) {
       ok = false;
