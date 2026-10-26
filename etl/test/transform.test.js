@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { aggregateLabor, aggregateOrders } from '../src/transform.js';
-import { dayStatements, lit } from '../src/sql.js';
+import { dayStatements, lit, mixStatements } from '../src/sql.js';
 import { hourIn } from '../src/dates.js';
 
 const lookups = {
@@ -76,6 +76,30 @@ test('discounts keep names and approvers; hours use the location time zone', () 
   assert.equal(hourIn('2026-01-15T03:30:00.000Z', 'America/Los_Angeles'), 19);
 });
 
+test('orders without a revenue center go to the one that starts their dining option', () => {
+  const lk = {
+    diningOptions: new Map([['dd-del', 'DoorDash - Delivery'], ['dd-old', 'Door Dash'], ['dine', 'Dine In']]),
+    revenueCenters: new Map([['rc-dd', 'DoorDash'], ['rc-d', 'Door'], ['rc-dr', 'Dining Room']]),
+  };
+  const order = (diningOption, revenueCenter, price) => ({
+    diningOption: diningOption && { guid: diningOption },
+    revenueCenter: revenueCenter && { guid: revenueCenter },
+    checks: [{ selections: [sel({ preDiscountPrice: price, price })] }],
+  });
+  const r = aggregateOrders([
+    order('dd-del', null, 20),
+    order('dd-old', null, 5),
+    order('dd-del', 'rc-dr', 7), // a named revenue center always wins
+    order('dine', null, 3),
+    order(null, null, 1),
+    order('dd-del', 'rc-deleted', 2), // revenue center missing from the lookup
+  ], { lookups: lk });
+  const rc = Object.fromEntries(r.mix.filter((m) => m.dimension === 'revenue_center').map((m) => [m.label, m.net_sales]));
+  assert.deepEqual(rc, { DoorDash: 27, 'Dining Room': 7, Unspecified: 4 });
+  const dining = r.mix.find((m) => m.dimension === 'dining_option' && m.label === 'Unspecified');
+  assert.equal(dining.net_sales, 1);
+});
+
 test('aggregateLabor costs regular and overtime by job and adds salaried labor', () => {
   const rows = aggregateLabor(
     [
@@ -101,4 +125,11 @@ test('SQL literals are escaped', () => {
   const sql = dayStatements('PL', '2026-09-24', aggregateOrders(orders, { lookups }), []).join('\n');
   assert.match(sql, /DELETE FROM daily_sales WHERE location_id='PL' AND business_date='2026-09-24';/);
   assert.match(sql, /INSERT INTO item_sales/);
+});
+
+test('mixStatements replaces only one mix dimension for the day', () => {
+  const sql = mixStatements('PB', '2026-05-16', aggregateOrders(orders, { lookups }), 'revenue_center').join('\n');
+  assert.match(sql, /^DELETE FROM sales_mix WHERE location_id='PB' AND business_date='2026-05-16' AND dimension='revenue_center';/);
+  assert.match(sql, /'revenue_center','Bar'/);
+  assert.doesNotMatch(sql, /dining_option|sales_category|daily_sales|item_sales/);
 });

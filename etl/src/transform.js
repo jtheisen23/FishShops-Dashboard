@@ -20,6 +20,7 @@ const DEFERRED_SELECTION_TYPES = new Set([
 const VOIDED_PAYMENT_STATUSES = new Set(['VOIDED', 'DENIED', 'CANCELLED']);
 
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : Number(v) || 0);
+const squash = (s) => String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
 const round2 = (v) => Math.round(v * 100) / 100;
 const sum = (arr, f) => (arr ?? []).reduce((acc, x) => acc + num(f(x)), 0);
 
@@ -45,6 +46,21 @@ export function aggregateOrders(orders, ctx) {
   const tz = ctx.timezone || 'America/Los_Angeles';
   const lk = ctx.lookups || {};
   const nameOf = (map, ref, fallback) => (ref?.guid && map?.get(ref.guid)) || fallback;
+
+  // Toast leaves the revenue center empty on some orders, e.g. DoorDash orders
+  // sent in by the integration before it was given a revenue center. Those go
+  // to the revenue center that starts their dining option's name
+  // ("DoorDash - Delivery" -> "DoorDash"), longest match first.
+  const centers = [...new Set(lk.revenueCenters?.values() ?? [])]
+    .map((name) => ({ name, key: squash(name) }))
+    .filter((c) => c.key)
+    .sort((a, b) => b.key.length - a.key.length);
+  const revenueCenterOf = (order, diningOption) => {
+    const named = nameOf(lk.revenueCenters, order.revenueCenter, null);
+    if (named) return named;
+    const key = squash(diningOption ?? '');
+    return centers.find((c) => key.startsWith(c.key))?.name || 'Unspecified';
+  };
 
   const daily = {
     orders: 0,
@@ -189,8 +205,9 @@ export function aggregateOrders(orders, ctx) {
     }
 
     const orderVals = { orders: 1, quantity: 0, gross_sales: orderGross, discounts: orderDisc, net_sales: orderNet };
-    addMix('dining_option', nameOf(lk.diningOptions, order.diningOption, 'Unspecified'), orderVals);
-    addMix('revenue_center', nameOf(lk.revenueCenters, order.revenueCenter, 'Unspecified'), orderVals);
+    const diningOption = nameOf(lk.diningOptions, order.diningOption, null);
+    addMix('dining_option', diningOption || 'Unspecified', orderVals);
+    addMix('revenue_center', revenueCenterOf(order, diningOption), orderVals);
   }
 
   return {

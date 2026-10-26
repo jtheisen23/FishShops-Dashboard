@@ -6,6 +6,8 @@
 //   node etl/src/index.js --start 2025-01-01 --end 2025-12-31   # backfill
 //   node etl/src/index.js --locations PL,PB --out .tmp/sync.sql  # write SQL instead of D1
 //   node etl/src/index.js --backfill --from 2025-01-01 --max-rows 60000  # nightly history load
+//   node etl/src/index.js --start 2026-02-01 --end 2026-10-10 --revenue-centers-only
+//                                   # rewrite only revenue center sales (after a mapping fix)
 //
 // Environment: TOAST_CLIENT_ID, TOAST_CLIENT_SECRET, [TOAST_API_HOST],
 //   CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN, D1_DATABASE_ID,
@@ -16,7 +18,7 @@ import { addDays, eachDate, parseDate, todayIn, toToastDate } from './dates.js';
 import { loadLocations } from './config.js';
 import { ToastClient } from './toast.js';
 import { aggregateLabor, aggregateOrders } from './transform.js';
-import { dayStatements, upsertLocationsSql } from './sql.js';
+import { dayStatements, mixStatements, upsertLocationsSql } from './sql.js';
 import { D1Sink, FileSink } from './sink.js';
 
 const { values: args } = parseArgs({
@@ -27,6 +29,7 @@ const { values: args } = parseArgs({
     locations: { type: 'string' },
     out: { type: 'string' },
     'skip-labor': { type: 'boolean', default: false },
+    'revenue-centers-only': { type: 'boolean', default: false },
     backfill: { type: 'boolean', default: false },
     from: { type: 'string', default: '2025-01-01' },
     'max-rows': { type: 'string', default: '60000' },
@@ -37,6 +40,8 @@ const { values: args } = parseArgs({
 const log = (...a) => console.error(new Date().toISOString(), ...a);
 
 async function main() {
+  // Backfill progress comes from sync_log, which a revenue-centers-only run doesn't update.
+  if (args.backfill && args['revenue-centers-only']) throw new Error('--revenue-centers-only needs --start/--days, not --backfill');
   let locations = loadLocations(args.config);
   if (args.locations) {
     const want = new Set(args.locations.split(',').map((s) => s.trim().toUpperCase()));
@@ -68,6 +73,11 @@ async function main() {
     const toastDate = toToastDate(date);
     const orders = await toast.ordersForBusinessDate(loc.toastGuid, toastDate);
     const sales = aggregateOrders(orders, { timezone: tz, lookups });
+    if (args['revenue-centers-only']) {
+      await sink.write(mixStatements(loc.id, date, sales, 'revenue_center'));
+      log(`  ${loc.id} ${date}: ${orders.length} orders, revenue centers rewritten`);
+      return;
+    }
     let entries = [];
     let labor = null;
     if (!args['skip-labor']) {

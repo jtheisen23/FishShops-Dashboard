@@ -40,6 +40,22 @@ export function upsertLocationsSql(locations) {
 }
 
 const TABLES = ['daily_sales', 'hourly_sales', 'sales_mix', 'item_sales', 'discount_sales', 'labor_daily'];
+const MIX_COLUMNS = [
+  'location_id', 'business_date', 'dimension', 'label', 'orders', 'quantity', 'gross_sales',
+  'discounts', 'net_sales',
+];
+
+/**
+ * Replaces one sales_mix dimension (e.g. 'revenue_center') for a location-day
+ * and leaves every other table alone: a cheap re-pull after a mapping fix.
+ */
+export function mixStatements(locationId, date, sales, dimension) {
+  const key = { location_id: locationId, business_date: date };
+  return [
+    `DELETE FROM sales_mix WHERE location_id=${lit(locationId)} AND business_date=${lit(date)} AND dimension=${lit(dimension)};`,
+    ...insert('sales_mix', sales.mix.filter((r) => r.dimension === dimension).map((r) => ({ ...key, ...r })), MIX_COLUMNS),
+  ];
+}
 
 /**
  * @param {string} locationId
@@ -63,10 +79,7 @@ export function dayStatements(locationId, date, sales, labor, meta = {}) {
       ...insert('hourly_sales', sales.hourly.map((r) => ({ ...key, ...r })), [
         'location_id', 'business_date', 'hour', 'orders', 'guests', 'net_sales',
       ]),
-      ...insert('sales_mix', sales.mix.map((r) => ({ ...key, ...r })), [
-        'location_id', 'business_date', 'dimension', 'label', 'orders', 'quantity', 'gross_sales',
-        'discounts', 'net_sales',
-      ]),
+      ...insert('sales_mix', sales.mix.map((r) => ({ ...key, ...r })), MIX_COLUMNS),
       ...insert('item_sales', sales.items.map((r) => ({ ...key, ...r })), [
         'location_id', 'business_date', 'item_name', 'sales_category', 'quantity', 'gross_sales', 'net_sales',
       ]),
