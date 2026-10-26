@@ -146,9 +146,16 @@ let groupsDimension = 'sales_category';
 async function groupsCard(ctx) {
   const body = h('div');
   const status = h('span', { class: 'muted small', role: 'status' });
+  let loads = 0;
 
   const load = async () => {
-    const data = await ctx.api(`/api/admin/groups?dimension=${groupsDimension}`, null, { noQuery: true });
+    // Each table and its Save button stay tied to the dimension they were
+    // loaded for, and a response overtaken by a newer tab click is dropped,
+    // so one dimension's names are never saved over another's groups.
+    const dimension = groupsDimension;
+    const seq = ++loads;
+    const data = await ctx.api(`/api/admin/groups?dimension=${dimension}`, null, { noQuery: true });
+    if (seq !== loads) return;
     const inputs = data.labels.map((l) => ({
       label: l.label,
       // No <datalist>: rebuilding its popup on each keystroke made typing lag.
@@ -192,7 +199,7 @@ async function groupsCard(ctx) {
       status.textContent = 'Saving…';
       try {
         const res = await ctx.post('/api/admin/groups', {
-          dimension: groupsDimension,
+          dimension,
           mappings: inputs.map((i) => ({ label: i.label, group: i.input.value })),
         });
         status.textContent = `Saved ${res.saved} grouping${res.saved === 1 ? '' : 's'}. Reports use them right away.`;
@@ -208,7 +215,7 @@ async function groupsCard(ctx) {
             h('table', {},
               h('thead', {}, h('tr', {},
                 h('th', { class: 'text' }, 'Toast name'),
-                h('th', {}, groupsDimension === 'discount' ? 'Discounts, last 12 months' : groupsDimension === 'labor_job' ? 'Labor $, last 12 months' : 'Net sales, last 12 months'),
+                h('th', {}, dimension === 'discount' ? 'Discounts, last 12 months' : dimension === 'labor_job' ? 'Labor $, last 12 months' : 'Net sales, last 12 months'),
                 h('th', { class: 'text' }, 'Group as'))),
               h('tbody', {}, inputs.map((i) => h('tr', {},
                 h('td', { class: 'text' }, i.label),
@@ -216,7 +223,15 @@ async function groupsCard(ctx) {
                 h('td', { class: 'text' }, i.input))))))
         : h('div', { class: 'muted' }, 'No data for the last 12 months yet.'),
       h('div', { class: 'card-tools', style: { marginTop: '12px' } },
-        h('button', { class: 'btn primary', type: 'button', onclick: save, disabled: !inputs.length }, 'Save groups'),
+        h('button', {
+          class: 'btn primary',
+          type: 'button',
+          // mousedown keeps focus in the box: blurring it refreshes the chips,
+          // which can push this button down mid-click so the click misses
+          onmousedown: (e) => e.preventDefault(),
+          onclick: save,
+          disabled: !inputs.length,
+        }, 'Save groups'),
         status),
     );
   };
