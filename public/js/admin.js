@@ -146,9 +146,15 @@ let groupsDimension = 'sales_category';
 async function groupsCard(ctx) {
   const body = h('div');
   const status = h('span', { class: 'muted small', role: 'status' });
+  let saveBtn = null;
 
   const load = async () => {
-    const data = await ctx.api(`/api/admin/groups?dimension=${groupsDimension}`, null, { noQuery: true });
+    // Pin the dimension for this load, so Save never posts these labels under
+    // a tab clicked later, and a slow response can't replace a newer table.
+    const dimension = groupsDimension;
+    if (saveBtn) saveBtn.disabled = true;
+    const data = await ctx.api(`/api/admin/groups?dimension=${dimension}`, null, { noQuery: true });
+    if (dimension !== groupsDimension) return;
     const inputs = data.labels.map((l) => ({
       label: l.label,
       // No <datalist>: rebuilding its popup on each keystroke made typing lag.
@@ -192,7 +198,7 @@ async function groupsCard(ctx) {
       status.textContent = 'Saving…';
       try {
         const res = await ctx.post('/api/admin/groups', {
-          dimension: groupsDimension,
+          dimension,
           mappings: inputs.map((i) => ({ label: i.label, group: i.input.value })),
         });
         status.textContent = `Saved ${res.saved} grouping${res.saved === 1 ? '' : 's'}. Reports use them right away.`;
@@ -201,6 +207,7 @@ async function groupsCard(ctx) {
       }
     };
 
+    saveBtn = h('button', { class: 'btn primary', type: 'button', onclick: save, disabled: !inputs.length }, 'Save groups');
     body.replaceChildren(
       chips,
       inputs.length
@@ -208,7 +215,7 @@ async function groupsCard(ctx) {
             h('table', {},
               h('thead', {}, h('tr', {},
                 h('th', { class: 'text' }, 'Toast name'),
-                h('th', {}, groupsDimension === 'discount' ? 'Discounts, last 12 months' : groupsDimension === 'labor_job' ? 'Labor $, last 12 months' : 'Net sales, last 12 months'),
+                h('th', {}, dimension === 'discount' ? 'Discounts, last 12 months' : dimension === 'labor_job' ? 'Labor $, last 12 months' : 'Net sales, last 12 months'),
                 h('th', { class: 'text' }, 'Group as'))),
               h('tbody', {}, inputs.map((i) => h('tr', {},
                 h('td', { class: 'text' }, i.label),
@@ -216,7 +223,7 @@ async function groupsCard(ctx) {
                 h('td', { class: 'text' }, i.input))))))
         : h('div', { class: 'muted' }, 'No data for the last 12 months yet.'),
       h('div', { class: 'card-tools', style: { marginTop: '12px' } },
-        h('button', { class: 'btn primary', type: 'button', onclick: save, disabled: !inputs.length }, 'Save groups'),
+        saveBtn,
         status),
     );
   };
