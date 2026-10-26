@@ -160,9 +160,12 @@ export async function listGroups(env, user, url) {
 export async function saveGroups(env, user, body) {
   requireAdmin(user);
   const dimension = readDimension(body?.dimension);
+  // The label is stored exactly as Toast has it (stray spaces included) so it
+  // matches when reports join on it. Grouping a name under itself is kept too,
+  // so the box shows what was typed after a reload.
   const mappings = (Array.isArray(body?.mappings) ? body.mappings : [])
-    .map((m) => ({ label: String(m?.label ?? '').trim(), group: String(m?.group ?? '').trim().slice(0, 60) }))
-    .filter((m) => m.label && m.group && m.group !== m.label);
+    .map((m) => ({ label: String(m?.label ?? ''), group: String(m?.group ?? '').trim().slice(0, 60) }))
+    .filter((m) => m.label && m.group);
   if (mappings.length > 500) throw new HttpError(400, 'Too many mappings');
   await env.DB.batch([
     env.DB.prepare('DELETE FROM category_groups WHERE dimension = ?').bind(dimension),
