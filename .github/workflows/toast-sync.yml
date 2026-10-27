@@ -25,6 +25,10 @@ on:
         description: 'Also reload the entire 7shifts log book history (one-time)'
         type: boolean
         default: false
+      revenue_centers_only:
+        description: 'Only rewrite revenue center sales for the dates (cheap re-pull; skips labor and 7shifts)'
+        type: boolean
+        default: false
 
 # Each kind of run (start date + locations + days) gets its own queue, so an
 # hourly run can't displace a queued nightly or backfill run.
@@ -60,6 +64,7 @@ jobs:
           IN_END: ${{ inputs.end }}
           IN_LOCATIONS: ${{ inputs.locations }}
           IN_DAYS: ${{ inputs.days }}
+          IN_REVENUE_CENTERS_ONLY: ${{ inputs.revenue_centers_only }}
           SCHEDULE: ${{ github.event.schedule }}
         run: |
           args=()
@@ -79,11 +84,12 @@ jobs:
             args+=(--days 1)
           fi
           [ -n "$IN_LOCATIONS" ] && args+=(--locations "$IN_LOCATIONS")
+          [ "$IN_REVENUE_CENTERS_ONLY" = "true" ] && args+=(--revenue-centers-only)
           node etl/src/index.js "${args[@]}"
       # Scheduled labor from 7shifts (admin-only 7shifts tab). Skipped until the
       # SEVENSHIFTS_ACCESS_TOKEN secret is added; runs even if the Toast step failed.
       - name: Sync 7shifts schedule into D1
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && !inputs.revenue_centers_only }}
         env:
           SEVENSHIFTS_ACCESS_TOKEN: ${{ secrets.SEVENSHIFTS_ACCESS_TOKEN }}
           LOCATIONS_JSON: ${{ secrets.LOCATIONS_JSON }}

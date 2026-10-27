@@ -124,7 +124,10 @@ loaded by `.github/workflows/toast-backfill.yml`. Every night it works backwards
 earliest loaded day toward its `from` date (default 2025-01-01), and stops after 60,000 D1 rows
 written so it stays under the free plan's 100k/day. Once history is complete it does nothing. To
 go further back, run *Actions → Toast history backfill → Run workflow* with an earlier date. For a
-one-off date range, use *Toast sync → Run workflow* with a start and end date.
+one-off date range, use *Toast sync → Run workflow* with a start and end date. Tick
+*revenue_centers_only* to rewrite only the revenue center numbers for that range: a few dozen D1
+rows per location-day instead of several hundred, for re-pulling history after a change to how
+revenue centers are assigned.
 
 You can also run the sync by hand: `node etl/src/index.js --start 2025-01-01 --end 2025-06-30`
 with the same environment variables set. Add `--out file.sql` to write SQL to a file instead of
@@ -181,6 +184,7 @@ People also have to be allowed by the Access policy (step 3.3) to reach the sign
 | Labor % | Labor $ ÷ net sales |
 | SPLH | Net sales ÷ labor hours |
 | Hour of day | Hour the order was opened, in the location's time zone |
+| Revenue center | The order's revenue center in Toast. Orders Toast saved without one (for example DoorDash orders sent in before the integration had a revenue center) go to the revenue center whose name starts their dining option's name ("DoorDash - Delivery" → DoorDash); the rest show as Unspecified |
 | Item sales | Check-level discounts are spread across the items on each check, so item totals add up to net sales |
 
 When you first connect Toast, compare one day per location against Toast's **Sales Summary**
