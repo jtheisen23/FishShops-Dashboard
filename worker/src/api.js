@@ -355,7 +355,7 @@ export async function logBook(env, url, user) {
   requireSection(user, 'sevenshifts');
   const q = readQuery(url, user);
   const { results: all } = await env.DB.prepare(
-    `SELECT id, name FROM locations WHERE id IN (${user.locations.map(() => '?').join(',')}) ORDER BY sort_order, name`,
+    `SELECT id, name, timezone FROM locations WHERE id IN (${user.locations.map(() => '?').join(',')}) ORDER BY sort_order, name`,
   )
     .bind(...user.locations)
     .all();

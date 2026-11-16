@@ -148,7 +148,8 @@ matched; add `"sevenShiftsId": <id>` to a location in `LOCATIONS_JSON` to pin on
 under 7shifts roles in *Admin → Category groups → Labor jobs*; the Labor and 7shifts tabs then group
 jobs by role (each role expands to its jobs). The tab also has a **Log book** section with every
 7shifts log book entry for the user's assigned locations, filterable by location, category and
-text. Each sync refreshes recent days; run *Toast sync* with *logbook_all* ticked to reload all history.
+text. Each entry and comment shows the date and time it was posted, in the location's time zone.
+Each sync refreshes recent days; run *Toast sync* with *logbook_all* ticked to reload all history.
 Attachments open through the Worker, which needs the same token as a Worker **secret**
 `SEVENSHIFTS_ACCESS_TOKEN` (Workers & Pages → fishshops-dashboard → Settings → Variables and Secrets).
 

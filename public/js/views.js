@@ -4,8 +4,8 @@
 
 import { barChart, lineChart } from './charts.js';
 import {
-  bucketLabel, bucketize, bucketsFor, change, dataTable, deltaNode, div, eachDate, fmt, fmtDate, fmtRange, fmtWeekday, h,
-  ICON_DOWN, ICON_UP, sumBy, svgIcon, toDate, totals, WEEKDAYS,
+  bucketLabel, bucketize, bucketsFor, change, dataTable, deltaNode, div, eachDate, fmt, fmtDate, fmtRange, fmtStamp, fmtWeekday, h,
+  ICON_DOWN, ICON_UP, parseStamp, sumBy, svgIcon, toDate, totals, WEEKDAYS,
 } from './util.js';
 
 // ---------------------------------------------------------------------------
@@ -1129,7 +1129,20 @@ async function logBookCard(ctx) {
   search.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => { logState.search = search.value; logState.shown = 100; draw(); }, 200); });
 
   const nameOf = new Map(data.locations.map((l) => [l.id, l.name]));
+  const tzOf = new Map(data.locations.map((l) => [l.id, l.timezone]));
   const para = (text) => h('div', { class: 'log-msg' }, text);
+  // When it was posted, in the location's time zone (hover shows the zone).
+  const stamp = (value, loc) => {
+    const text = fmtStamp(value, tzOf.get(loc));
+    return text
+      ? h('time', { class: 'muted small', datetime: parseStamp(value).toISOString(), title: `Posted ${fmtStamp(value, tzOf.get(loc), { withZone: true })}` }, text)
+      : null;
+  };
+  /** 'Name · time', leaving out whichever is missing. */
+  const byline = (...parts) => {
+    const xs = parts.filter(Boolean);
+    return xs.length ? h('span', { class: 'muted small' }, xs.flatMap((x, i) => (i ? [' · ', x] : [x]))) : null;
+  };
 
   function draw() {
     const cats = [...new Set(data.posts.map((p) => p.category))].sort();
@@ -1153,11 +1166,14 @@ async function logBookCard(ctx) {
         ...g.posts.map((p) => h('div', { class: 'log-post' },
           h('div', { class: 'log-meta' },
             h('span', { class: 'pill on' }, p.category),
-            p.author ? h('span', { class: 'muted small' }, p.author) : null,
+            byline(p.author, stamp(p.created, p.location_id)),
             p.attachment_count && !p.attachments?.length ? h('span', { class: 'muted small' }, `📎 ${p.attachment_count}`) : null),
           para(p.message),
           p.attachments?.length ? attachmentsRow(p) : null,
-          ...p.comments.map((c) => h('div', { class: 'log-comment' }, h('span', { class: 'muted small' }, `${c.author || 'Comment'}: `), c.message)))))),
+          ...p.comments.map((c) => {
+            const when = stamp(c.created, p.location_id);
+            return h('div', { class: 'log-comment' }, h('span', { class: 'muted small' }, c.author || 'Comment', when ? [' · ', when] : null, ': '), c.message);
+          }))))),
       posts.length > shown.length
         ? h('button', { class: 'btn', type: 'button', style: { marginTop: '8px' }, onclick: () => { logState.shown += 200; draw(); } }, `Show more (${posts.length - shown.length} left)`)
         : null,

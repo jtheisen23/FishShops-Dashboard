@@ -103,6 +103,32 @@ const weekdayName = new Intl.DateTimeFormat('en-US', { weekday: 'short', timeZon
 export const fmtDate = (s) => shortDate.format(toDate(s));
 export const fmtDateLong = (s) => longDate.format(toDate(s));
 export const fmtWeekday = (s) => weekdayName.format(toDate(s));
+/** A stored timestamp as a Date. 7shifts sends ISO 8601; a value with no offset ('2026-11-15 22:42:10') is UTC. */
+export function parseStamp(s) {
+  if (!s) return null;
+  let t = String(s).trim().replace(' ', 'T');
+  if (!/T\d/.test(t)) return null; // a date alone has no time to show
+  if (!/(Z|[+-]\d{2}:?\d{2})$/i.test(t)) t += 'Z';
+  const d = new Date(t);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+const stampFormats = new Map();
+function stampFormat(timeZone, withZone) {
+  const key = `${timeZone || ''}|${withZone}`;
+  if (!stampFormats.has(key)) {
+    const opts = { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', ...(withZone ? { timeZoneName: 'short' } : {}) };
+    let f;
+    try { f = new Intl.DateTimeFormat('en-US', { ...opts, timeZone: timeZone || undefined }); }
+    catch { f = new Intl.DateTimeFormat('en-US', opts); } // unknown zone: the viewer's own
+    stampFormats.set(key, f);
+  }
+  return stampFormats.get(key);
+}
+/** 'Nov 15, 2026, 2:42 PM' in `timeZone` (the location's), or '' when there's no usable time. */
+export function fmtStamp(s, timeZone, { withZone = false } = {}) {
+  const d = parseStamp(s);
+  return d ? stampFormat(timeZone, withZone).format(d) : '';
+}
 export function fmtRange(p) {
   if (!p) return '';
   if (p.start === p.end) return `${fmtWeekday(p.start)} ${fmtDateLong(p.start)}`;
