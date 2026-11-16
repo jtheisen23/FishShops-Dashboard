@@ -16,6 +16,8 @@ const shareTitle = (p, locName) => `Log book · ${locName} · ${p.category} · $
 // Windows won't pass a link over ~2,000 characters to the mail or messages app,
 // so long notes are shortened there (Copy text always has the whole note).
 const LINK_LIMIT = /Windows/i.test(navigator.userAgent) ? 2000 : 30000;
+// Gmail and Outlook on the web open in a browser tab; their servers take longer links than mail apps.
+const WEB_LINK_LIMIT = 8000;
 
 /**
  * Plain-text version of an entry. `max` shortens the note to that many characters and
@@ -46,10 +48,10 @@ function shareText(p, { locName, tz, link, heading = true, max = Infinity }) {
   return lines.join('\n');
 }
 
-/** A mailto:/sms: link for the entry, shortening the note until the link fits. */
-function shareHref(make, p, opts) {
+/** A link carrying the entry (mailto:, sms:, webmail), shortening the note until the link fits `limit`. */
+function shareHref(make, p, opts, limit = LINK_LIMIT) {
   let href = make(shareText(p, opts));
-  for (let max = p.message.length; href.length > LINK_LIMIT && max > 0; max = Math.floor(max * 0.8)) {
+  for (let max = p.message.length; href.length > limit && max > 0; max = Math.floor(max * 0.8)) {
     href = make(shareText(p, { ...opts, max }));
   }
   return href;
@@ -218,7 +220,8 @@ function canShareFiles() {
 }
 
 /**
- * The Share button and its menu. As text: Email, Text message, Copy text. As a picture:
+ * The Share button and its menu. As text: Email (on a computer: Email app, Gmail, Outlook),
+ * Text message, Copy text. As a picture:
  * Share picture… where the browser can share files (phones), otherwise Copy picture and
  * Download picture. `opts` = { locName, tz, link }.
  */
@@ -300,11 +303,22 @@ export function shareMenu(p, opts) {
         }
       },
     });
+    // On a computer, "Email app" needs a mail app set up; many people use email in the
+    // browser instead, so Gmail and Outlook open a new email there. Phones have a mail app.
+    const mailOpts = { ...opts, heading: false };
+    const q = encodeURIComponent;
+    const webMail = fine
+      ? [
+        ['Gmail', (t) => `https://mail.google.com/mail/?view=cm&fs=1&su=${q(subject)}&body=${q(t)}`],
+        ['Outlook', (t) => `https://outlook.office.com/mail/deeplink/compose?subject=${q(subject)}&body=${q(t)}`],
+      ].map(([label, make]) => item(label, { href: shareHref(make, p, mailOpts, WEB_LINK_LIMIT), target: '_blank', rel: 'noopener', onclick: close }))
+      : [];
     list.append(...[
-      item('Email', {
-        href: shareHref((t) => `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(crlf(t))}`, p, { ...opts, heading: false }),
+      item(fine ? 'Email app' : 'Email', {
+        href: shareHref((t) => `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(crlf(t))}`, p, mailOpts),
         onclick: close,
       }),
+      ...webMail,
       item('Text message', { href: shareHref((t) => `sms:?&body=${encodeURIComponent(t)}`, p, opts), onclick: close }),
       copyText,
       !canShareFiles() && navigator.share
