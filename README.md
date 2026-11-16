@@ -149,8 +149,9 @@ under 7shifts roles in *Admin → Category groups → Labor jobs*; the Labor and
 jobs by role (each role expands to its jobs). The tab also has a **Log book** section with every
 7shifts log book entry for the user's assigned locations, filterable by location, category and
 text. Each entry and comment shows the date and time it was posted, in the location's time zone.
-Each entry's **Share** button emails or texts it (or copies the text) through the viewer's own mail and
-messages apps, with a link back to that day in the dashboard. Nothing is sent by the dashboard itself.
+Each entry's **Share** button sends it as text (email, text message or copy, with a link back to that
+day in the dashboard) or as a picture of the entry with its photos (the phone's share sheet; on a
+computer, copy or download). It all goes through the viewer's own apps; the dashboard sends nothing.
 Each sync refreshes recent days; run *Toast sync* with *logbook_all* ticked to reload all history.
 Attachments open through the Worker, which needs the same token as a Worker **secret**
 `SEVENSHIFTS_ACCESS_TOKEN` (Workers & Pages → fishshops-dashboard → Settings → Variables and Secrets).

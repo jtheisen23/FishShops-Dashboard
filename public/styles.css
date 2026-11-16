@@ -201,6 +201,7 @@ tr.total td { font-weight: 650; border-top: 1px solid var(--axis); border-bottom
   background: none; color: var(--text); text-decoration: none; cursor: pointer;
 }
 .log-share-menu > a:hover, .log-share-menu > button:hover, .log-share-menu > :focus-visible { background: var(--surface-2); }
+.log-share-sep { height: 1px; margin: 4px 6px; background: var(--grid); }
 
 /* Admin -------------------------------------------------------------------- */
 .stack { display: flex; flex-direction: column; gap: 16px; }

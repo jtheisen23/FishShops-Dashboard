@@ -3,8 +3,9 @@
 // and returns a DOM node.
 
 import { barChart, lineChart } from './charts.js';
+import { logFileHref, shareMenu } from './logshare.js';
 import {
-  bucketLabel, bucketize, bucketsFor, change, dataTable, deltaNode, div, eachDate, fmt, fmtDate, fmtDateLong, fmtRange, fmtStamp, fmtWeekday, h,
+  bucketLabel, bucketize, bucketsFor, change, dataTable, deltaNode, div, eachDate, fmt, fmtDate, fmtRange, fmtStamp, fmtWeekday, h,
   ICON_DOWN, ICON_UP, parseStamp, sumBy, svgIcon, toDate, totals, WEEKDAYS,
 } from './util.js';
 
@@ -1089,101 +1090,11 @@ const logState = { locs: null, category: '', search: '', files: false, shown: 10
 /** Thumbnails for images, links for other files; both open the file in a new tab. */
 function attachmentsRow(p) {
   return h('div', { class: 'log-files' }, p.attachments.map((a) => {
-    const href = `/api/logbook/file?post=${encodeURIComponent(p.id)}&i=${a.i}`;
+    const href = logFileHref(p, a);
     return h('a', { href, target: '_blank', rel: 'noopener', title: a.name, class: a.image ? 'log-thumb' : 'log-file' },
       a.image ? h('img', { src: href, alt: a.name, loading: 'lazy' }) : `📎 ${a.name}`);
   }));
 }
-
-// Sharing an entry by email or text message, through the viewer's own mail and
-// messages apps. Windows won't pass a link over ~2,000 characters to those apps,
-// so long notes are shortened there (Copy text always has the whole note).
-const SHARE_LINK_LIMIT = /Windows/i.test(navigator.userAgent) ? 2000 : 30000;
-
-const logShareTitle = (p, locName) => `Log book · ${locName} · ${p.category} · ${fmtWeekday(p.business_date)} ${fmtDateLong(p.business_date)}`;
-
-/**
- * Plain-text version of an entry. `max` shortens the note to that many characters and
- * leaves comments out (to fit a link); `heading` adds the title line (texts have no subject).
- */
-function logShareText(p, { locName, tz, link, heading = true, max = Infinity }) {
-  const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
-  const posted = fmtStamp(p.created, tz, { withZone: true });
-  const by = p.author ? `Posted by ${p.author}${posted ? ` · ${posted}` : ''}` : posted ? `Posted ${posted}` : '';
-  const shortened = Number.isFinite(max);
-  const lines = heading ? [logShareTitle(p, locName), ''] : [];
-  if (by) lines.push(by, '');
-  if (max < p.message.length) {
-    const cut = p.message.slice(0, max);
-    const space = cut.search(/\s\S*$/); // end on a whole word when there's one nearby
-    lines.push(`${(space > max * 0.8 ? cut.slice(0, space) : cut).trimEnd()}… (shortened)`);
-  } else {
-    lines.push(p.message);
-  }
-  if (p.comments.length && !shortened) {
-    lines.push('', 'Comments:', ...p.comments.map((c) => {
-      const when = fmtStamp(c.created, tz);
-      return `${c.author || 'Comment'}${when ? ` (${when})` : ''}: ${c.message}`;
-    }));
-  }
-  if (p.comments.length && shortened) lines.push('', `${plural(p.comments.length, 'comment')} not included`);
-  if (p.attachment_count) lines.push('', `📎 ${plural(p.attachment_count, 'attachment')}`);
-  lines.push('', `${shortened ? 'Full entry' : 'View it'} in the dashboard: ${link}`);
-  return lines.join('\n');
-}
-
-/** A mailto:/sms: link for the entry, shortening the note until the link fits. */
-function shareHref(make, p, opts) {
-  let href = make(logShareText(p, opts));
-  for (let max = p.message.length; href.length > SHARE_LINK_LIMIT && max > 0; max = Math.floor(max * 0.8)) {
-    href = make(logShareText(p, { ...opts, max }));
-  }
-  return href;
-}
-
-/** The Share button and its menu (Email, Text message, Copy text, and the phone's share sheet). */
-function shareMenu(p, opts) {
-  const subject = logShareTitle(p, opts.locName);
-  const menu = h('details', { class: 'log-share' });
-  const list = h('div', { class: 'log-share-menu', role: 'menu' });
-  const close = () => { menu.open = false; };
-  const item = (label, attrs) => h(attrs.href ? 'a' : 'button', { role: 'menuitem', ...(attrs.href ? {} : { type: 'button' }), ...attrs }, label);
-  menu.addEventListener('toggle', () => {
-    if (!menu.open || list.childElementCount) return;
-    const crlf = (t) => t.replace(/\r?\n/g, '\r\n');
-    const copy = item('Copy text', {
-      onclick: async () => {
-        try {
-          await navigator.clipboard.writeText(logShareText(p, opts));
-          copy.textContent = 'Copied';
-        } catch {
-          copy.textContent = 'Couldn’t copy';
-        }
-        setTimeout(() => { copy.textContent = 'Copy text'; close(); }, 1200);
-      },
-    });
-    list.append(...[
-      item('Email', {
-        href: shareHref((t) => `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(crlf(t))}`, p, { ...opts, heading: false }),
-        onclick: close,
-      }),
-      item('Text message', { href: shareHref((t) => `sms:?&body=${encodeURIComponent(t)}`, p, opts), onclick: close }),
-      copy,
-      navigator.share
-        ? item('Other apps…', { onclick: () => { close(); navigator.share({ title: subject, text: logShareText(p, opts) }).catch(() => {}); } })
-        : null,
-    ].filter(Boolean));
-  });
-  menu.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && menu.open) { close(); menu.querySelector('summary').focus(); }
-  });
-  menu.append(h('summary', { class: 'btn', title: 'Email or text this entry' }, 'Share'), list);
-  return menu;
-}
-// One listener closes any open share menu when someone clicks elsewhere.
-document.addEventListener('click', (e) => {
-  for (const d of document.querySelectorAll('details.log-share[open]')) if (!d.contains(e.target)) d.open = false;
-});
 
 async function logBookCard(ctx) {
   const body = h('div');
