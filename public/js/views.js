@@ -3,9 +3,10 @@
 // and returns a DOM node.
 
 import { barChart, lineChart } from './charts.js';
+import { logFileHref, shareMenu } from './logshare.js';
 import {
-  bucketLabel, bucketize, bucketsFor, change, dataTable, deltaNode, div, eachDate, fmt, fmtDate, fmtRange, fmtWeekday, h,
-  ICON_DOWN, ICON_UP, sumBy, svgIcon, toDate, totals, WEEKDAYS,
+  bucketLabel, bucketize, bucketsFor, change, dataTable, deltaNode, div, eachDate, fmt, fmtDate, fmtRange, fmtStamp, fmtWeekday, h,
+  ICON_DOWN, ICON_UP, parseStamp, sumBy, svgIcon, toDate, totals, WEEKDAYS,
 } from './util.js';
 
 // ---------------------------------------------------------------------------
@@ -1089,7 +1090,7 @@ const logState = { locs: null, category: '', search: '', files: false, shown: 10
 /** Thumbnails for images, links for other files; both open the file in a new tab. */
 function attachmentsRow(p) {
   return h('div', { class: 'log-files' }, p.attachments.map((a) => {
-    const href = `/api/logbook/file?post=${encodeURIComponent(p.id)}&i=${a.i}`;
+    const href = logFileHref(p, a);
     return h('a', { href, target: '_blank', rel: 'noopener', title: a.name, class: a.image ? 'log-thumb' : 'log-file' },
       a.image ? h('img', { src: href, alt: a.name, loading: 'lazy' }) : `📎 ${a.name}`);
   }));
@@ -1129,7 +1130,22 @@ async function logBookCard(ctx) {
   search.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => { logState.search = search.value; logState.shown = 100; draw(); }, 200); });
 
   const nameOf = new Map(data.locations.map((l) => [l.id, l.name]));
+  const tzOf = new Map(data.locations.map((l) => [l.id, l.timezone]));
   const para = (text) => h('div', { class: 'log-msg' }, text);
+  // When it was posted, in the location's time zone (hover shows the zone).
+  const stamp = (value, loc) => {
+    const text = fmtStamp(value, tzOf.get(loc));
+    return text
+      ? h('time', { class: 'muted small', datetime: parseStamp(value).toISOString(), title: `Posted ${fmtStamp(value, tzOf.get(loc), { withZone: true })}` }, text)
+      : null;
+  };
+  // The 7shifts tab for one day, for links in shared entries.
+  const dayLink = (d) => `${location.origin}/#${new URLSearchParams({ tab: 'sevenshifts', preset: 'custom', start: d, end: d, grain: 'day' })}`;
+  /** 'Name · time', leaving out whichever is missing. */
+  const byline = (...parts) => {
+    const xs = parts.filter(Boolean);
+    return xs.length ? h('span', { class: 'muted small' }, xs.flatMap((x, i) => (i ? [' · ', x] : [x]))) : null;
+  };
 
   function draw() {
     const cats = [...new Set(data.posts.map((p) => p.category))].sort();
@@ -1152,12 +1168,17 @@ async function logBookCard(ctx) {
         h('div', { class: 'log-day-head' }, h('b', {}, `${fmtWeekday(g.date)} ${fmtDate(g.date)}`), ' · ', nameOf.get(g.loc) || g.loc),
         ...g.posts.map((p) => h('div', { class: 'log-post' },
           h('div', { class: 'log-meta' },
-            h('span', { class: 'pill on' }, p.category),
-            p.author ? h('span', { class: 'muted small' }, p.author) : null,
-            p.attachment_count && !p.attachments?.length ? h('span', { class: 'muted small' }, `📎 ${p.attachment_count}`) : null),
+            h('div', { class: 'log-meta-info' },
+              h('span', { class: 'pill on' }, p.category),
+              byline(p.author, stamp(p.created, p.location_id)),
+              p.attachment_count && !p.attachments?.length ? h('span', { class: 'muted small' }, `📎 ${p.attachment_count}`) : null),
+            shareMenu(p, { locName: nameOf.get(p.location_id) || p.location_id, tz: tzOf.get(p.location_id), link: dayLink(p.business_date) })),
           para(p.message),
           p.attachments?.length ? attachmentsRow(p) : null,
-          ...p.comments.map((c) => h('div', { class: 'log-comment' }, h('span', { class: 'muted small' }, `${c.author || 'Comment'}: `), c.message)))))),
+          ...p.comments.map((c) => {
+            const when = stamp(c.created, p.location_id);
+            return h('div', { class: 'log-comment' }, h('span', { class: 'muted small' }, c.author || 'Comment', when ? [' · ', when] : null, ': '), c.message);
+          }))))),
       posts.length > shown.length
         ? h('button', { class: 'btn', type: 'button', style: { marginTop: '8px' }, onclick: () => { logState.shown += 200; draw(); } }, `Show more (${posts.length - shown.length} left)`)
         : null,
