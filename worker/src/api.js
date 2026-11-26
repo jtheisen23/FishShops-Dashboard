@@ -476,8 +476,11 @@ export async function kitchen(env, url, user) {
       roleWeek.end,
     ));
   }
+  stmts.push(stmt(`SELECT location_id, business_date, hour, channel, minutes FROM ticket_times WHERE ${RANGE}`));
   const res = (await env.DB.batch(stmts)).map((r) => r.results);
-  const [labor, sales, hourly, openDays, roleRows = []] = res;
+  const [labor, sales, hourly, openDays] = res;
+  const roleRows = roleWeek ? res[4] : [];
+  const ticketRows = res.at(-1);
 
   const roles = new Map();
   for (const r of roleRows) {
@@ -502,10 +505,62 @@ export async function kitchen(env, url, user) {
   return {
     query: q,
     excludedJobs: KITCHEN_EXCLUDED_JOBS,
+    tickets: ticketBoards(ticketRows, roleWeek),
     labor,
     sales: user.sections.sales ? sales : null,
     roleWeek,
     roles: [...roles.values()],
     heatmap,
   };
+}
+
+const TICKET_CHANNELS = ['Dine-in', 'Online', 'Takeout'];
+const quantile = (sorted, p) => sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * p))];
+const median = (sorted) => {
+  const n = sorted.length;
+  return n % 2 ? sorted[(n - 1) / 2] : (sorted[n / 2 - 1] + sorted[n / 2]) / 2;
+};
+const r1 = (v) => Math.round(v * 10) / 10;
+const mondayOf = (date) => {
+  const dow = (new Date(`${date}T12:00:00Z`).getUTCDay() + 6) % 7;
+  return dayShift(date, -dow);
+};
+
+/**
+ * Kitchen ticket-time boards (as in the labor report): the latest full week's
+ * stats by order type, weekly medians by order type, and median minutes by
+ * weekday and hour (cells with 3+ tickets). Null when no kitchen bumps on the KDS.
+ */
+export function ticketBoards(rows, week) {
+  if (!rows?.length) return null;
+  const group = (keyOf) => {
+    const m = new Map();
+    for (const r of rows) {
+      const k = keyOf(r);
+      if (k === null) continue;
+      if (!m.has(k)) m.set(k, []);
+      m.get(k).push(r.minutes);
+    }
+    for (const v of m.values()) v.sort((a, b) => a - b);
+    return m;
+  };
+  const summary = [];
+  if (week) {
+    for (const [k, v] of group((r) => (r.business_date >= week.start && r.business_date <= week.end ? `${r.location_id}|${r.channel}` : null))) {
+      const [location_id, channel] = k.split('|');
+      summary.push({ location_id, channel, n: v.length, median: r1(median(v)), mean: r1(v.reduce((a, b) => a + b, 0) / v.length), p90: r1(quantile(v, 0.9)) });
+    }
+  }
+  const trend = [];
+  for (const [k, v] of group((r) => `${r.location_id}|${r.channel}|${mondayOf(r.business_date)}`)) {
+    const [location_id, channel, week_start] = k.split('|');
+    trend.push({ location_id, channel, week_start, median: r1(median(v)), n: v.length });
+  }
+  const heat = [];
+  for (const [k, v] of group((r) => (r.hour === null ? null : `${r.location_id}|${(new Date(`${r.business_date}T12:00:00Z`).getUTCDay() + 6) % 7}|${r.hour}`))) {
+    if (v.length < 3) continue;
+    const [location_id, wd, hour] = k.split('|');
+    heat.push({ location_id, weekday: Number(wd), hour: Number(hour), median: r1(median(v)), n: v.length, over: Math.round((100 * v.filter((x) => x > 20).length) / v.length) });
+  }
+  return { channels: TICKET_CHANNELS, week, summary, trend, heat };
 }

@@ -39,7 +39,7 @@ export function upsertLocationsSql(locations) {
   );
 }
 
-const TABLES = ['daily_sales', 'hourly_sales', 'sales_mix', 'item_sales', 'discount_sales', 'labor_daily'];
+const TABLES = ['daily_sales', 'hourly_sales', 'sales_mix', 'item_sales', 'discount_sales', 'ticket_times', 'labor_daily'];
 const MIX_COLUMNS = [
   'location_id', 'business_date', 'dimension', 'label', 'orders', 'quantity', 'gross_sales',
   'discounts', 'net_sales',
@@ -85,6 +85,9 @@ export function dayStatements(locationId, date, sales, labor, meta = {}) {
       ]),
       ...insert('discount_sales', sales.discounts.map((r) => ({ ...key, ...r })), [
         'location_id', 'business_date', 'discount_name', 'approver', 'uses', 'amount',
+      ]),
+      ...insert('ticket_times', (sales.tickets ?? []).map((r) => ({ ...key, ...r })), [
+        'location_id', 'business_date', 'order_guid', 'hour', 'channel', 'minutes',
       ]),
     );
   }

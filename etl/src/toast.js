@@ -120,6 +120,7 @@ export class ToastClient {
     const byGuid = (rows, nameOf) => new Map(rows.filter((r) => r?.guid).map((r) => [r.guid, nameOf(r)]));
     return {
       diningOptions: byGuid(diningOptions, (r) => r.name),
+      diningBehaviors: byGuid(diningOptions, (r) => r.behavior || ''),
       revenueCenters: byGuid(revenueCenters, (r) => r.name),
       salesCategories: byGuid(salesCategories, (r) => r.name),
       jobs: byGuid(jobs, (r) => r.title),

@@ -33,6 +33,42 @@ function bump(map, key, init) {
   return row;
 }
 
+const ONLINE_SOURCES = new Set(['online', 'api', 'toast local']);
+
+/** Dine-in / Online / Takeout (or null), as the labor report buckets orders. */
+export function ticketChannel(source, behavior) {
+  const s = String(source || '').trim().toLowerCase();
+  const b = String(behavior || '').trim().toUpperCase();
+  if (ONLINE_SOURCES.has(s)) return 'Online';
+  if (b === 'DINE_IN') return 'Dine-in';
+  if (b === 'TAKE_OUT' || b === 'DELIVERY') return 'Takeout';
+  return null;
+}
+
+/**
+ * Whole-ticket kitchen time in minutes: earliest item fired (createdDate) to
+ * latest item marked READY on the KDS (its modifiedDate). Null when nothing
+ * on the order was bumped READY, or the span is implausible (4h+).
+ */
+export function ticketMinutes(order) {
+  let fired = null;
+  let ready = null;
+  for (const check of order.checks ?? []) {
+    for (const sel of check?.selections ?? []) {
+      if (!sel || sel.voided) continue;
+      const c = Date.parse(sel.createdDate);
+      if (Number.isFinite(c) && (fired === null || c < fired)) fired = c;
+      if (sel.fulfillmentStatus === 'READY') {
+        const m = Date.parse(sel.modifiedDate);
+        if (Number.isFinite(m) && (ready === null || m > ready)) ready = m;
+      }
+    }
+  }
+  if (fired === null || ready === null) return null;
+  const mins = (ready - fired) / 60000;
+  return mins >= 0 && mins < 240 ? round2(mins) : null;
+}
+
 function selectionGross(sel) {
   if (sel.preDiscountPrice !== undefined && sel.preDiscountPrice !== null) return num(sel.preDiscountPrice);
   return num(sel.price) + sum(sel.appliedDiscounts, (d) => d.discountAmount);
@@ -79,6 +115,7 @@ export function aggregateOrders(orders, ctx) {
   const mix = new Map();
   const items = new Map();
   const discounts = new Map();
+  const tickets = [];
 
   const addMix = (dimension, label, vals) => {
     const row = bump(mix, `${dimension}\u0000${label}`, () => ({
@@ -197,6 +234,11 @@ export function aggregateOrders(orders, ctx) {
     daily.net_sales += orderNet;
 
     const hour = hourIn(order.openedDate || order.createdDate, tz);
+    const minutes = order.guid ? ticketMinutes(order) : null;
+    if (minutes !== null) {
+      const channel = ticketChannel(order.source, order.diningOption?.guid && lk.diningBehaviors?.get(order.diningOption.guid));
+      if (channel) tickets.push({ order_guid: String(order.guid), hour, channel, minutes });
+    }
     if (hour !== null) {
       const h = bump(hourly, hour, () => ({ hour, orders: 0, guests: 0, net_sales: 0 }));
       h.orders += 1;
@@ -216,6 +258,7 @@ export function aggregateOrders(orders, ctx) {
     mix: [...mix.values()].map(roundAll),
     items: [...items.values()].map(roundAll),
     discounts: [...discounts.values()].map(roundAll).filter((d) => d.amount !== 0 || d.uses > 0),
+    tickets,
   };
 }
 

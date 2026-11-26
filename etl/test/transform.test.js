@@ -133,3 +133,20 @@ test('mixStatements replaces only one mix dimension for the day', () => {
   assert.match(sql, /'revenue_center','Bar'/);
   assert.doesNotMatch(sql, /dining_option|sales_category|daily_sales|item_sales/);
 });
+
+test('ticket time runs from first item fired to last item bumped READY', async () => {
+  const { ticketMinutes, ticketChannel } = await import('../src/transform.js');
+  const sel = (created, modified, status, extra = {}) => ({ createdDate: created, modifiedDate: modified, fulfillmentStatus: status, ...extra });
+  const order = { checks: [{ selections: [
+    sel('2026-11-20T19:00:00.000+0000', '2026-11-20T19:05:00.000+0000', 'READY'),
+    sel('2026-11-20T19:02:00.000+0000', '2026-11-20T19:14:30.000+0000', 'READY'),
+    sel('2026-11-20T18:50:00.000+0000', '2026-11-20T19:30:00.000+0000', 'READY', { voided: true }),
+  ] }] };
+  assert.equal(ticketMinutes(order), 14.5);
+  assert.equal(ticketMinutes({ checks: [{ selections: [sel('2026-11-20T19:00:00Z', '2026-11-20T19:05:00Z', 'SENT')] }] }), null);
+  assert.equal(ticketMinutes({ checks: [{ selections: [sel('2026-11-20T10:00:00Z', '2026-11-20T15:00:00Z', 'READY')] }] }), null);
+  assert.equal(ticketChannel('Online', 'TAKE_OUT'), 'Online');
+  assert.equal(ticketChannel('In Store', 'DINE_IN'), 'Dine-in');
+  assert.equal(ticketChannel('In Store', 'DELIVERY'), 'Takeout');
+  assert.equal(ticketChannel('In Store', ''), null);
+});
