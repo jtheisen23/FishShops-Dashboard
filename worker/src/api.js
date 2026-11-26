@@ -420,3 +420,92 @@ export async function logBookFile(env, url, user) {
     },
   });
 }
+
+// ---------------------------------------------------------------------------
+// Labor/Kitchen tab: the weekly boards from the Fishshops-Labor report.
+// ---------------------------------------------------------------------------
+// That report leaves these Toast jobs out of every labor figure (Register is a
+// POS role; GM and Chef are salaried). "Salaried" is this dashboard's own
+// fixed-cost row, which the report doesn't have either.
+export const KITCHEN_EXCLUDED_JOBS = ['register', 'general manager', 'chef', 'salaried'];
+// Role buckets for "Labor hours by role" when a job isn't grouped in Admin.
+const DEFAULT_ROLE_BUCKETS = { kitchen: 'Kitchen', staff: 'Staff', 'shift capt': 'Shift Capt/Lead', 'shift lead': 'Shift Capt/Lead' };
+
+const dayShift = (s, n) => {
+  const d = new Date(`${s}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+};
+
+/**
+ * Weekly sales, transactions and labor by location, the latest full week's
+ * hours by role, and average orders by weekday and hour. Needs Labor access;
+ * sales figures and the orders heatmap also need Sales access.
+ */
+export async function kitchen(env, url, user) {
+  requireSection(user, 'labor');
+  const q = readQuery(url, user);
+  const { start, end } = q.current;
+  const excluded = `LOWER(TRIM(l.job_title)) NOT IN (${KITCHEN_EXCLUDED_JOBS.map((j) => `'${j}'`).join(', ')})`;
+
+  // Latest complete Monday-Sunday week inside the range, for hours by role.
+  const endDow = (new Date(`${end}T12:00:00Z`).getUTCDay() + 6) % 7; // Monday = 0
+  const roleEnd = endDow === 6 ? end : dayShift(end, -endDow - 1);
+  const roleStart = dayShift(roleEnd, -6);
+  const roleWeek = roleStart >= start ? { start: roleStart, end: roleEnd } : null;
+
+  const inList = q.locations.map(() => '?').join(',');
+  const stmt = (sql, s = start, e = end) => env.DB.prepare(sql.replaceAll('{LOCATIONS}', inList)).bind(s, e, ...q.locations);
+  const stmts = [
+    stmt(`SELECT business_date, location_id, SUM(regular_hours + overtime_hours) AS hours, SUM(regular_cost + overtime_cost) AS cost
+            FROM labor_daily l WHERE ${RANGE} AND ${excluded} GROUP BY business_date, location_id`),
+    stmt(`SELECT business_date, location_id, net_sales, orders FROM daily_sales WHERE ${RANGE}`),
+    stmt(`SELECT location_id, CAST(strftime('%w', business_date) AS INTEGER) AS weekday, hour,
+                 SUM(orders) AS orders, COUNT(*) AS days
+            FROM hourly_sales WHERE ${RANGE} AND orders > 0 GROUP BY location_id, weekday, hour`),
+    stmt(`SELECT location_id, CAST(strftime('%w', business_date) AS INTEGER) AS weekday, COUNT(DISTINCT business_date) AS days
+            FROM hourly_sales WHERE ${RANGE} AND orders > 0 GROUP BY location_id, weekday`),
+  ];
+  if (roleWeek) {
+    stmts.push(stmt(
+      `SELECT l.location_id, l.job_title, g.group_name, SUM(l.regular_hours + l.overtime_hours) AS hours
+         FROM labor_daily l LEFT JOIN category_groups g ON g.dimension = 'labor_job' AND g.source_label = l.job_title
+        WHERE l.business_date BETWEEN ? AND ? AND l.location_id IN ({LOCATIONS}) AND ${excluded}
+        GROUP BY l.location_id, l.job_title, g.group_name`,
+      roleWeek.start,
+      roleWeek.end,
+    ));
+  }
+  const res = (await env.DB.batch(stmts)).map((r) => r.results);
+  const [labor, sales, hourly, openDays, roleRows = []] = res;
+
+  const roles = new Map();
+  for (const r of roleRows) {
+    const role = r.group_name || DEFAULT_ROLE_BUCKETS[String(r.job_title).trim().toLowerCase()] || r.job_title;
+    const k = `${r.location_id}|${role}`;
+    roles.set(k, { location_id: r.location_id, role, hours: (roles.get(k)?.hours || 0) + r.hours });
+  }
+
+  // Average orders per weekday and hour: the hour's orders over the weekday's
+  // open days, kept only for hours open on at least 40% (and 2) of those days.
+  let heatmap = null;
+  if (user.sections.sales) {
+    const occ = new Map(openDays.map((r) => [`${r.location_id}|${r.weekday}`, r.days]));
+    heatmap = [];
+    for (const r of hourly) {
+      const days = occ.get(`${r.location_id}|${r.weekday}`) || 0;
+      if (!days || r.days < Math.max(2, days * 0.4)) continue;
+      heatmap.push({ location_id: r.location_id, weekday: r.weekday, hour: r.hour, avg: Math.round((r.orders / days) * 10) / 10 });
+    }
+  }
+
+  return {
+    query: q,
+    excludedJobs: KITCHEN_EXCLUDED_JOBS,
+    labor,
+    sales: user.sections.sales ? sales : null,
+    roleWeek,
+    roles: [...roles.values()],
+    heatmap,
+  };
+}

@@ -35,6 +35,8 @@ async function route(request, env) {
         return json(await api.mix(env, url, user));
       case '/api/discounts':
         return json(await api.discounts(env, url, user));
+      case '/api/kitchen':
+        return json(await api.kitchen(env, url, user));
       case '/api/labor':
         return json(await api.labor(env, url, user));
       case '/api/items':
