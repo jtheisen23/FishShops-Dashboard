@@ -1190,3 +1190,190 @@ async function logBookCard(ctx) {
   return card('Log book', `${fmtRange(ctx.q.current)} · from 7shifts`, [filesLabel, catSelect, search, status],
     h('div', { style: { margin: '0 0 12px' } }, chipRow), body);
 }
+
+// ---------------------------------------------------------------------------
+// Labor/Kitchen: the weekly boards from the Fishshops-Labor report. Weeks are
+// complete Monday-Sunday weeks inside the selected range.
+// ---------------------------------------------------------------------------
+const KITCHEN_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const hourLabel = (hr) => `${hr % 12 === 0 ? 12 : hr % 12}${hr < 12 ? 'a' : 'p'}`;
+const hoursMinutes = (v) => {
+  const m = Math.round((v || 0) * 60);
+  return `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}m`;
+};
+
+/** Monday of the week containing `date`. */
+function weekOf(date) {
+  const dow = (toDate(date).getUTCDay() + 6) % 7;
+  return addDaysIso(date, -dow);
+}
+function addDaysIso(s, n) {
+  const d = toDate(s);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+export async function kitchen(ctx) {
+  const data = await ctx.api('/api/kitchen');
+  const ids = ctx.q.locations;
+  const hasSales = !!data.sales;
+  const { start, end } = ctx.q.current;
+
+  // Complete Monday-Sunday weeks inside the range.
+  const weeks = [];
+  for (let w = weekOf(start) === start ? start : addDaysIso(weekOf(start), 7); addDaysIso(w, 6) <= end; w = addDaysIso(w, 7)) weeks.push(w);
+  const excludedLabel = 'Register, GM, Chef & salaried excluded';
+
+  // Per (week, location) totals.
+  const cell = new Map();
+  const at = (w, id) => {
+    const k = `${w}|${id}`;
+    if (!cell.has(k)) cell.set(k, { week: w, id, net: 0, orders: 0, hours: 0, cost: 0 });
+    return cell.get(k);
+  };
+  const inWeeks = new Set(weeks);
+  for (const r of data.sales || []) {
+    const w = weekOf(r.business_date);
+    if (!inWeeks.has(w)) continue;
+    const c = at(w, r.location_id);
+    c.net += r.net_sales;
+    c.orders += r.orders;
+  }
+  for (const r of data.labor) {
+    const w = weekOf(r.business_date);
+    if (!inWeeks.has(w)) continue;
+    const c = at(w, r.location_id);
+    c.hours += r.hours;
+    c.cost += r.cost;
+  }
+  const value = (w, id, f) => {
+    const c = cell.get(`${w}|${id}`);
+    return c ? f(c) : null;
+  };
+  const weekCats = weeks.map((w) => w.slice(5));
+
+  const lineCard = (title, sub, f, format, axis) => {
+    const el = chartBox();
+    later(() => lineChart(el, {
+      categories: weekCats,
+      series: ids.map((id) => ({ name: ctx.loc(id).name, colorIndex: ctx.loc(id).colorIndex, data: weeks.map((w) => value(w, id, f)) })),
+      format,
+      axisFormat: axis || format,
+    }));
+    return card(title, sub, null, el);
+  };
+
+  const parts = [];
+  if (!weeks.length) {
+    parts.push(h('div', { class: 'notice' }, 'The weekly boards need at least one full Monday–Sunday week in the date range. Pick "Last 8 weeks" to match the labor report.'));
+  } else {
+    // Weekly trend charts
+    if (hasSales) parts.push(lineCard('Net sales week over week by location', 'Weekly net sales (pre-tax).', (c) => c.net, fmt.money, fmt.moneyShort));
+    if (hasSales) parts.push(lineCard('Labor cost % of sales week over week', `Labor cost as a share of net sales — lower is more efficient. ${excludedLabel}.`, (c) => div(c.cost, c.net), fmt.pct));
+    if (hasSales) parts.push(lineCard('Transactions week over week by location', 'Weekly order/ticket counts.', (c) => c.orders, fmt.int));
+
+    // Sales per labor hour by location: each week, the average and first-to-last change.
+    if (hasSales) {
+      const splhRows = ids.map((id) => {
+        const vals = weeks.map((w) => value(w, id, (c) => div(c.net, c.hours)));
+        const got = vals.filter((v) => v !== null);
+        const row = { id, avg: got.length ? got.reduce((s, v) => s + v, 0) / got.length : null, chg: got.length >= 2 && got[0] ? (got.at(-1) - got[0]) / got[0] : null };
+        weeks.forEach((w, i) => { row[`w_${w}`] = vals[i]; });
+        return row;
+      });
+      const splhTable = dataTable({
+        columns: [
+          { key: 'id', label: 'Location', text: true, value: (r) => ctx.loc(r.id).name, render: (r) => locCell(ctx, r.id) },
+          ...weeks.map((w) => ({ key: `w_${w}`, label: fmtDate(w), fmt: fmt.money2 })),
+          { key: 'avg', label: 'Average', fmt: fmt.money2 },
+          { key: 'chg', label: 'Change', render: (r) => deltaNode(r.chg) },
+        ],
+        rows: splhRows,
+        sortKey: 'avg',
+        filename: 'sales-per-labor-hour',
+      });
+      parts.push(card('Sales per labor hour by location', `Weekly SPLH by location, with the multi-week average and first-to-last change. ${excludedLabel}.`, csvButton(() => splhTable), splhTable.el));
+    }
+  }
+
+  // Labor hours by role (latest full week)
+  if (data.roleWeek) {
+    const byLoc = new Map();
+    const roleTotals = new Map();
+    for (const r of data.roles) {
+      byLoc.set(`${r.location_id}|${r.role}`, r.hours);
+      roleTotals.set(r.role, (roleTotals.get(r.role) || 0) + r.hours);
+    }
+    const locTotal = new Map(ids.map((id) => [id, data.roles.filter((r) => r.location_id === id).reduce((s, r) => s + r.hours, 0)]));
+    const order = ['Kitchen', 'Staff', 'Shift Capt/Lead'];
+    const roleNames = [...roleTotals.keys()].sort((a, b) => (order.indexOf(a) + 1 || 99) - (order.indexOf(b) + 1 || 99) || roleTotals.get(b) - roleTotals.get(a));
+    const roleRows = roleNames.map((role) => ({ role, ...Object.fromEntries(ids.map((id) => [`l_${id}`, byLoc.get(`${id}|${role}`) || 0])) }));
+    const roleTable = dataTable({
+      columns: [
+        { key: 'role', label: 'Role', text: true },
+        ...ids.map((id) => ({
+          key: `l_${id}`,
+          label: ctx.loc(id).name,
+          csv: (r) => (r[`l_${id}`] || 0).toFixed(2),
+          render: (r) => (r.isTotal
+            ? `${fmt.dec1(r[`l_${id}`])}h`
+            : h('div', {}, hoursMinutes(r[`l_${id}`]), h('div', { class: 'muted small' }, fmt.pct(div(r[`l_${id}`], locTotal.get(id)))))),
+        })),
+      ],
+      rows: roleRows,
+      total: { role: 'Total (ex-Register, GM & Chef)', isTotal: true, ...Object.fromEntries(ids.map((id) => [`l_${id}`, locTotal.get(id)])) },
+      filename: 'labor-hours-by-role',
+    });
+    parts.push(card('Labor hours by role', `Week of ${fmtDate(data.roleWeek.start)} · ${excludedLabel} · jobs roll up by Admin → Category groups → Labor jobs`, csvButton(() => roleTable), roleTable.el));
+  }
+
+  // Average orders by hour & day
+  if (data.heatmap?.length) {
+    const max = Math.max(...data.heatmap.map((c) => c.avg)) || 1;
+    const blocks = ids.filter((id) => data.heatmap.some((c) => c.location_id === id)).map((id) => {
+      const cells = new Map(data.heatmap.filter((c) => c.location_id === id).map((c) => [`${(c.weekday + 6) % 7}-${c.hour}`, c.avg]));
+      const hours = [...new Set(data.heatmap.filter((c) => c.location_id === id).map((c) => c.hour))].sort((a, b) => a - b);
+      return h('div', { class: 'heat-block' },
+        h('div', { class: 'heat-name' }, locCell(ctx, id)),
+        h('div', { class: 'table-wrap' }, h('table', { class: 'heat' },
+          h('thead', {}, h('tr', {}, h('th', { class: 'text' }, 'Day'), hours.map((hr) => h('th', {}, hourLabel(hr))))),
+          h('tbody', {}, KITCHEN_DAYS.map((day, wd) => h('tr', {},
+            h('td', { class: 'text' }, day),
+            hours.map((hr) => {
+              const v = cells.get(`${wd}-${hr}`);
+              if (v === undefined) return h('td', { class: 'heat-cell empty' });
+              const t = Math.min(4, Math.floor((v / max) * 5));
+              return h('td', { class: `heat-cell b${t}`, title: `${ctx.loc(id).name} · ${day} ${hourLabel(hr)} · ${v} avg orders` }, String(v));
+            })))))));
+    });
+    parts.push(card('Average orders by hour & day', `Average number of orders in each hour of the week (${fmtRange(ctx.q.current)}, local time). Darker = busier; the lightest cells are the slowest hours. Blank = closed / too few.`, null,
+      ...blocks,
+      h('div', { class: 'heat-legend' }, h('span', { class: 'muted small' }, 'Fewer'), [0, 1, 2, 3, 4].map((b) => h('span', { class: `heat-swatch b${b}` })), h('span', { class: 'muted small' }, 'More orders'))));
+  }
+
+  // Full data table
+  if (weeks.length) {
+    const rows = [];
+    for (const w of weeks) for (const id of ids) {
+      const c = cell.get(`${w}|${id}`);
+      if (!c) continue;
+      rows.push({ week: w, id, net: c.net, orders: c.orders, avgCheck: div(c.net, c.orders), hours: c.hours, cost: c.cost, pct: div(c.cost, c.net), splh: div(c.net, c.hours) });
+    }
+    const cols = [
+      { key: 'week', label: 'Week of', text: true },
+      { key: 'id', label: 'Location', text: true, value: (r) => ctx.loc(r.id).name },
+    ];
+    if (hasSales) cols.push({ key: 'net', label: 'Net sales', fmt: fmt.money2 }, { key: 'orders', label: 'Transactions', fmt: fmt.int }, { key: 'avgCheck', label: 'Avg check', fmt: fmt.money2 });
+    cols.push({ key: 'hours', label: 'Labor hours', fmt: fmt.dec1 }, { key: 'cost', label: 'Labor cost', fmt: fmt.money2 });
+    if (hasSales) cols.push({ key: 'pct', label: 'Labor %', fmt: fmt.pct }, { key: 'splh', label: 'SPLH', fmt: fmt.money2 });
+    const full = dataTable({ columns: cols, rows, sortKey: 'week', sortDir: 'asc', filename: 'labor-kitchen-weekly' });
+    parts.push(h('section', { class: 'card' },
+      h('details', {},
+        h('summary', { class: 'details-summary' }, h('h2', {}, 'Full data table')),
+        h('div', { class: 'card-tools', style: { margin: '8px 0' } }, csvButton(() => full)),
+        full.el)));
+  }
+
+  if (!hasSales) parts.unshift(h('div', { class: 'notice' }, 'Sales, labor %, SPLH and the orders heatmap are hidden because your account does not include sales access.'));
+  return h('div', { class: 'stack' }, ...parts);
+}

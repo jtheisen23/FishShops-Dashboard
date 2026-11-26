@@ -143,6 +143,7 @@ export const PRESETS = [
   ['last7', 'Last 7 days'],
   ['wtd', 'Week to date'],
   ['lastweek', 'Last week'],
+  ['last8w', 'Last 8 weeks'],
   ['last30', 'Last 30 days'],
   ['mtd', 'Month to date'],
   ['lastmonth', 'Last month'],
@@ -183,6 +184,7 @@ export function presetRange(preset, today = localToday()) {
     case 'last365': return { start: addDays(y, -364), end: y };
     case 'wtd': return toDate_(addDays(today, -dow));
     case 'lastweek': { const s = addDays(today, -dow - 7); return { start: s, end: addDays(s, 6) }; }
+    case 'last8w': { const s = addDays(today, -dow - 56); return { start: s, end: addDays(s, 55) }; }
     case 'mtd': return toDate_(month0);
     case 'lastmonth': { const end = addDays(month0, -1); return { start: `${end.slice(0, 8)}01`, end }; }
     case 'qtd': return toDate_(quarter0);

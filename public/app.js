@@ -12,6 +12,7 @@ const TABS = [
   { id: 'mix', label: 'Sales mix', section: 'sales', render: views.mix },
   { id: 'discounts', label: 'Discounts & comps', section: 'discounts', render: views.discounts },
   { id: 'labor', label: 'Labor', section: 'labor', render: views.labor },
+  { id: 'kitchen', label: 'Labor/Kitchen', section: 'labor', render: views.kitchen },
   { id: 'items', label: 'Menu items', section: 'items', render: views.items },
   { id: 'sevenshifts', label: '7shifts', section: 'sevenshifts', render: views.sevenShifts },
   { id: 'admin', label: 'Admin', admin: true, render: adminView },

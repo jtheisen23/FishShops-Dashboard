@@ -86,12 +86,20 @@ function legend(t, show, bars = false) {
  * series: [{ name, data: number[], colorIndex?: number, color?: 'compare', dashed?: bool, labels?: string[] }]
  * `labels` lets a comparison series show its own dates in the tooltip.
  */
+/** Room above the plot for the legend, which wraps onto more lines on narrow screens. */
+function legendTop(el, series) {
+  if (series.length < 2) return 12;
+  const chars = series.reduce((n, s) => n + String(s.name).length + 5, 0);
+  const lines = Math.max(1, Math.ceil((chars * 7) / Math.max(200, (el.clientWidth || 600) - 24)));
+  return 14 + lines * 20;
+}
+
 export function lineChart(el, { categories, series, format = (v) => v, axisFormat, area = false, zeroBased = true }) {
   return mount(el, (t) => {
     const colorOf = (s) => (s.color === 'compare' ? t.compare : t.series[(s.colorIndex ?? 0) % 8]);
     return {
       animationDuration: 300,
-      grid: { left: 8, right: 16, top: series.length > 1 ? 34 : 12, bottom: 8, containLabel: true },
+      grid: { left: 8, right: 16, top: legendTop(el, series), bottom: 8, containLabel: true },
       legend: legend(t, series.length > 1),
       tooltip: {
         ...tooltipBase(t),
@@ -142,7 +150,7 @@ export function barChart(el, { categories, series, format = (v) => v, axisFormat
     const val = { ...valueAxis(t, axisFormat || format), max };
     return {
       animationDuration: 300,
-      grid: { left: 8, right: 16, top: series.length > 1 ? 34 : 12, bottom: 8, containLabel: true },
+      grid: { left: 8, right: 16, top: legendTop(el, series), bottom: 8, containLabel: true },
       legend: legend(t, series.length > 1, true),
       tooltip: {
         ...tooltipBase(t),
