@@ -245,3 +245,9 @@ table.heat td.text { text-align: left; color: var(--text-2); font-weight: 600; }
 .heat-swatch { width: 22px; height: 12px; border-radius: 3px; display: inline-block; }
 .details-summary { cursor: pointer; list-style: revert; }
 .details-summary h2 { display: inline; font-size: 15px; font-weight: 650; margin: 0; }
+.t0 { background: #bfe3c6; color: #111; }
+.t1 { background: #e9edb0; color: #111; }
+.t2 { background: #f5d59b; color: #111; }
+.t3 { background: #f2b48a; color: #111; }
+.t4 { background: #eb9c9c; color: #111; }
+.heat-key { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); margin-right: 8px; }

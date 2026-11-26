@@ -155,6 +155,18 @@ function day(loc, date) {
   });
   labor.push({ job_title: 'Salaried', employees: 0, shifts: 0, regular_hours: 0, overtime_hours: 0, regular_cost: 420, overtime_cost: 0 });
 
+  // Kitchen ticket times (KDS bumps): busier hours run slower.
+  const tickets = [];
+  const channels = [['Dine-in', 0.6], ['Takeout', 0.25], ['Online', 0.15]];
+  for (const hr of hourly) {
+    const n = Math.round(hr.orders * 0.6);
+    for (let i = 0; i < n; i++) {
+      const r = rand();
+      const channel = r < channels[0][1] ? 'Dine-in' : r < channels[0][1] + channels[1][1] ? 'Takeout' : 'Online';
+      tickets.push({ order_guid: `${hr.hour}-${i}`, hour: hr.hour, channel, minutes: round2(7 + hr.orders * 0.12 + rand() * 9 + (channel === 'Dine-in' ? 2 : 0)) });
+    }
+  }
+
   const voids = round2(gross * 0.004 * jitter(0.8));
   return {
     sales: {
@@ -175,6 +187,7 @@ function day(loc, date) {
       mix,
       items,
       discounts,
+      tickets,
     },
     labor,
   };

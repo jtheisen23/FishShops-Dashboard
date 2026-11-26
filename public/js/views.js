@@ -1213,15 +1213,31 @@ function addDaysIso(s, n) {
   return d.toISOString().slice(0, 10);
 }
 
-export async function kitchen(ctx) {
-  const data = await ctx.api('/api/kitchen');
-  const ids = ctx.q.locations;
-  const hasSales = !!data.sales;
-  const { start, end } = ctx.q.current;
-
-  // Complete Monday-Sunday weeks inside the range.
+/** Full Monday-Sunday weeks from `start` through `end`. */
+function fullWeeks(start, end) {
   const weeks = [];
   for (let w = weekOf(start) === start ? start : addDaysIso(weekOf(start), 7); addDaysIso(w, 6) <= end; w = addDaysIso(w, 7)) weeks.push(w);
+  return weeks;
+}
+
+export async function kitchen(ctx) {
+  const ids = ctx.q.locations;
+  // Weekly boards need several full weeks to draw lines. When the picked range
+  // has fewer than 4, use the 8 full weeks ending with the range's last full
+  // week (as the labor report does).
+  let { start, end } = ctx.q.current;
+  let weeks = fullWeeks(start, end);
+  let widened = false;
+  if (weeks.length < 4) {
+    const lastSunday = addDaysIso(weekOf(addDaysIso(end, 1)), -1);
+    end = lastSunday;
+    start = addDaysIso(lastSunday, -55);
+    weeks = fullWeeks(start, end);
+    widened = true;
+  }
+  const data = await ctx.api('/api/kitchen', { start, end });
+  const hasSales = !!data.sales;
+  const span = `${weeks.length} weeks, ${fmtDate(start)} – ${fmtDate(end)}`;
   const excludedLabel = 'Register, GM, Chef & salaried excluded';
 
   // Per (week, location) totals.
@@ -1264,13 +1280,12 @@ export async function kitchen(ctx) {
   };
 
   const parts = [];
-  if (!weeks.length) {
-    parts.push(h('div', { class: 'notice' }, 'The weekly boards need at least one full Monday–Sunday week in the date range. Pick "Last 8 weeks" to match the labor report.'));
-  } else {
+  if (widened) parts.push(h('div', { class: 'notice' }, `The selected dates hold fewer than 4 full Monday–Sunday weeks, so this tab shows the last 8 full weeks (${fmtDate(start)} – ${fmtDate(end)}). Pick a longer range to change it.`));
+  {
     // Weekly trend charts
-    if (hasSales) parts.push(lineCard('Net sales week over week by location', 'Weekly net sales (pre-tax).', (c) => c.net, fmt.money, fmt.moneyShort));
-    if (hasSales) parts.push(lineCard('Labor cost % of sales week over week', `Labor cost as a share of net sales — lower is more efficient. ${excludedLabel}.`, (c) => div(c.cost, c.net), fmt.pct));
-    if (hasSales) parts.push(lineCard('Transactions week over week by location', 'Weekly order/ticket counts.', (c) => c.orders, fmt.int));
+    if (hasSales) parts.push(lineCard('Net sales week over week by location', `Weekly net sales (pre-tax) · ${span}.`, (c) => c.net, fmt.money, fmt.moneyShort));
+    if (hasSales) parts.push(lineCard('Labor cost % of sales week over week', `Labor cost as a share of net sales — lower is more efficient. ${excludedLabel} · ${span}.`, (c) => div(c.cost, c.net), fmt.pct));
+    if (hasSales) parts.push(lineCard('Transactions week over week by location', `Weekly order/ticket counts · ${span}.`, (c) => c.orders, fmt.int));
 
     // Sales per labor hour by location: each week, the average and first-to-last change.
     if (hasSales) {
@@ -1346,9 +1361,80 @@ export async function kitchen(ctx) {
               return h('td', { class: `heat-cell b${t}`, title: `${ctx.loc(id).name} · ${day} ${hourLabel(hr)} · ${v} avg orders` }, String(v));
             })))))));
     });
-    parts.push(card('Average orders by hour & day', `Average number of orders in each hour of the week (${fmtRange(ctx.q.current)}, local time). Darker = busier; the lightest cells are the slowest hours. Blank = closed / too few.`, null,
+    parts.push(card('Average orders by hour & day', `Average number of orders in each hour of the week (${span}, local time). Darker = busier; the lightest cells are the slowest hours. Blank = closed / too few.`, null,
       ...blocks,
       h('div', { class: 'heat-legend' }, h('span', { class: 'muted small' }, 'Fewer'), [0, 1, 2, 3, 4].map((b) => h('span', { class: `heat-swatch b${b}` })), h('span', { class: 'muted small' }, 'More orders'))));
+  }
+
+  // Kitchen ticket time (KDS)
+  const tk = data.tickets;
+  if (tk) {
+    const mins = (v) => (v === null || v === undefined ? '—' : `${fmt.dec1(v)} min`);
+    const tkLocs = ids.filter((id) => tk.trend.some((r) => r.location_id === id));
+    if (tk.summary.length) {
+      const rows = tk.summary
+        .map((r) => ({ ...r, loc: ctx.loc(r.location_id).name, order: tk.channels.indexOf(r.channel) }))
+        .sort((a, b) => a.loc.localeCompare(b.loc) || a.order - b.order);
+      const table = dataTable({
+        columns: [
+          ...(tkLocs.length > 1 ? [{ key: 'loc', label: 'Location', text: true, render: (r) => locCell(ctx, r.location_id) }] : []),
+          { key: 'channel', label: 'Order type', text: true },
+          { key: 'n', label: 'Tickets', fmt: fmt.int },
+          { key: 'median', label: 'Median', render: (r) => h('b', {}, mins(r.median)), csv: (r) => r.median },
+          { key: 'mean', label: 'Avg', fmt: mins, csv: (r) => r.mean },
+          { key: 'p90', label: '90th pct', fmt: mins, csv: (r) => r.p90 },
+        ],
+        rows,
+        filename: 'kitchen-ticket-times',
+      });
+      parts.push(card('Kitchen ticket time (estimated)', `Week of ${fmtDate(tk.week.start)} · time from first item fired to last item ready on the KDS`, csvButton(() => table),
+        table.el,
+        h('div', { class: 'muted small', style: { marginTop: '10px' } },
+          'Estimated from item-level timestamps; only tickets the kitchen bumped to "ready" are included. Median: the typical ticket. Avg: pulled up by a few slow tickets. 90th pct: 9 of 10 tickets were ready within this time.')));
+    }
+
+    // Weekly median by order type, one line per location (or per order type for one location).
+    const trendEl = chartBox();
+    const tState = { channel: 'Dine-in' };
+    const drawTrend = () => {
+      window.echarts.getInstanceByDom(trendEl)?.dispose();
+      const at = new Map(tk.trend.map((r) => [`${r.location_id}|${r.channel}|${r.week_start}`, r.median]));
+      const series = tkLocs.length === 1
+        ? tk.channels.filter((c) => tk.trend.some((r) => r.channel === c)).map((c, i) => ({ name: c, colorIndex: i, data: weeks.map((w) => at.get(`${tkLocs[0]}|${c}|${w}`) ?? null) }))
+        : tkLocs.map((id) => ({ name: ctx.loc(id).name, colorIndex: ctx.loc(id).colorIndex, data: weeks.map((w) => at.get(`${id}|${tState.channel}|${w}`) ?? null) }));
+      lineChart(trendEl, { categories: weekCats, series, format: mins, axisFormat: (v) => `${Math.round(v)}m` });
+    };
+    const tTools = tkLocs.length > 1 ? seg(tk.channels.map((c) => [c, c]), tState.channel, (v) => { tState.channel = v; drawTrend(); }) : null;
+    parts.push(card('Kitchen ticket time trend (estimated)', `Weekly median minutes from first item fired to last item ready${tkLocs.length > 1 ? '' : ', by order type'} · ${span}.`, tTools, trendEl));
+    later(drawTrend);
+
+    // Median minutes by weekday and hour.
+    const heatLocs = ids.filter((id) => tk.heat.some((c) => c.location_id === id));
+    if (heatLocs.length) {
+      const band = (v) => (v <= 10 ? 't0' : v <= 14 ? 't1' : v <= 18 ? 't2' : v <= 22 ? 't3' : 't4');
+      const blocks = heatLocs.map((id) => {
+        const mine = tk.heat.filter((c) => c.location_id === id);
+        const cells = new Map(mine.map((c) => [`${c.weekday}-${c.hour}`, c]));
+        const hours = [...new Set(mine.map((c) => c.hour))].sort((a, b) => a - b);
+        return h('div', { class: 'heat-block' },
+          heatLocs.length > 1 ? h('div', { class: 'heat-name' }, locCell(ctx, id)) : null,
+          h('div', { class: 'table-wrap' }, h('table', { class: 'heat' },
+            h('thead', {}, h('tr', {}, h('th', { class: 'text' }, 'Day'), hours.map((hr) => h('th', {}, hourLabel(hr))))),
+            h('tbody', {}, KITCHEN_DAYS.map((day, wd) => h('tr', {},
+              h('td', { class: 'text' }, day),
+              hours.map((hr) => {
+                const c = cells.get(`${wd}-${hr}`);
+                if (!c) return h('td', { class: 'heat-cell empty' });
+                return h('td', { class: `heat-cell ${band(c.median)}`, title: `${day} ${hourLabel(hr)} · median ${c.median}m · ${c.over}% over 20 min · ${c.n} tickets` }, String(Math.round(c.median)));
+              })))))));
+      });
+      parts.push(card('Ticket time by day & hour (estimated)', `Median minutes from first item fired to last item ready, by weekday and hour (${span}). Redder = slower; blank = too few tickets.`, null,
+        ...blocks,
+        h('div', { class: 'heat-legend' }, ['≤10', '≤14', '≤18', '≤22', '22+'].map((l, i) => h('span', { class: 'heat-key' }, h('span', { class: `heat-swatch t${i}` }), l)))));
+    }
+  } else {
+    parts.push(card('Kitchen ticket time', null, null, h('div', { class: 'muted' },
+      'No KDS ticket times for these locations and weeks yet. They appear for kitchens that bump tickets to "ready" on the Toast KDS.')));
   }
 
   // Full data table
